@@ -27,6 +27,9 @@ resume a partial artifact: rerunning restarts the declared experiment.
 CI replays the committed results and re-runs inference; it does not retrain the
 full study. Local `uv run pytest -q` checks hand-calculated mathematical cases,
 map identity separation, exact update accounting, and checkpoint round-trips.
+Recorded outcomes are exact. Inference checks recorded states with a 1e-6
+probability tolerance for greedy ties or sampled CDF boundaries across CPUs;
+it does not replace recorded actions or outcomes with another rollout.
 Regeneration can vary numerically across Torch/platform versions. Compare raw
 outcomes and effects, not timing or compressed-file byte identity.
 

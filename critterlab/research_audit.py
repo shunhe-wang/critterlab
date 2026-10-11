@@ -2,17 +2,63 @@
 import argparse
 import hashlib
 import json
+import math
 from pathlib import Path
 
+import numpy as np
 import torch
 
-from .research import (ROOT, PROTOCOL, Actor, build_manifest, configurations, evaluate, garden_from, identity,
+from .research import (ROOT, PROTOCOL, Actor, build_manifest, configurations, garden_from, identity,
                        read_result, update_budget)
 from .train import metrics
 from .world import World, route
 
 
+def verify_actions(actor, pool, episodes, sampled):
+    """Check recorded actions at recorded states, with portable numeric tolerance.
+
+    A near-tie on another CPU must not branch into a different trajectory and
+    invalidate its later states. Outcomes are still checked exactly by replay.
+    """
+    worlds = [World(garden_from(r)) for r in pool]
+    uniforms = np.random.default_rng(19123).random((48, len(pool)))
+    borderline = 0
+    for t in range(48):
+        active = [i for i, e in enumerate(episodes) if t < len(e["actions"])]
+        if not active:
+            break
+        with torch.no_grad():
+            probabilities = torch.softmax(actor(torch.tensor(np.array([worlds[i].obs() for i in active]))), -1).numpy().astype(np.float64)
+        probabilities /= probabilities.sum(-1, keepdims=True)
+        actions = np.array([episodes[i]["actions"][t] for i in active])
+        rows = np.arange(len(active))
+        if sampled:
+            cdf = probabilities.cumsum(-1)
+            upper = cdf[rows, actions]
+            lower = upper - probabilities[rows, actions]
+            u = uniforms[t, active]
+            assert np.all(u >= lower - 1e-6) and np.all(u <= upper + 1e-6), "Sample incompatible with actor probabilities"
+            borderline += int(((u < lower) | (u > upper)).sum())
+        else:
+            gap = probabilities.max(-1) - probabilities[rows, actions]
+            assert np.all(gap <= 1e-6), "Greedy action incompatible with actor probabilities"
+            borderline += int((actions != probabilities.argmax(-1)).sum())
+        for i, action in zip(active, actions.tolist()):
+            worlds[i].step(action)
+    return borderline
+
+
 def audit(result, verify_inference=True):
+    def finite(value):
+        if isinstance(value, float):
+            assert math.isfinite(value), "Nonfinite artifact value"
+        elif isinstance(value, dict):
+            for item in value.values():
+                finite(item)
+        elif isinstance(value, list):
+            for item in value:
+                finite(item)
+    finite(result)
     assert result.get("complete"), "Incomplete study"
     spec = result["spec"]
     if result["protocol_run"]:
@@ -28,7 +74,7 @@ def audit(result, verify_inference=True):
             assert record["id"] not in world_index, "Duplicate world across frozen groups"
             assert len(route(record["cells"], record["start"], record["goal"])) >= 4
             world_index[record["id"]] = record
-    checked = 0
+    checked, borderline = 0, 0
     for run in result["runs"]:
         before, after = update_budget(run["method"], spec)
         account = run["accounting"]
@@ -55,9 +101,11 @@ def audit(result, verify_inference=True):
                     checked += 1
                 assert metrics(evaluation["episodes"]) == evaluation["metrics"]
                 if verify_inference:
-                    assert evaluate(actor, pool, mode == "sampled") == evaluation, (run["method"], run["seed"], family, mode)
+                    borderline += verify_actions(actor, pool, evaluation["episodes"], mode == "sampled")
     for path, digest in result["source_sha256"].items():
         assert hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == digest, path
+    if borderline:
+        print(f"Accepted {borderline} numerical boundary choices within 1e-6 probability tolerance; exact recorded outcomes retained.")
     return checked
 
 

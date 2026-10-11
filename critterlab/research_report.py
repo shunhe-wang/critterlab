@@ -38,12 +38,18 @@ def format_effect(effect):
 
 def analyze(result):
     spec = result["spec"]
-    analysis = {"protocol": result["protocol"], "primary": {}, "secondary": {}, "ablations": {}, "means": {}}
+    analysis = {"protocol": result["protocol"], "primary": {}, "sampled_effects": {}, "shift_change": {}, "action_selection_gaps": {},
+                "secondary": {}, "ablations": {}, "means": {}}
     for family in spec["families"]:
         analysis["means"][family] = {m: {mode: interval(values(result, m, family, mode=mode), spec)
                                           for mode in ("greedy", "sampled")} for m in spec["methods"]}
         main_delta = values(result, "bc-ppo", family) - values(result, "ppo", family)
         analysis["primary"][family] = interval(main_delta, spec)
+        analysis["sampled_effects"][family] = interval(
+            values(result, "bc-ppo", family, mode="sampled") - values(result, "ppo", family, mode="sampled"), spec)
+        analysis["action_selection_gaps"][family] = {
+            m: interval(values(result, m, family, mode="sampled") - values(result, m, family), spec)
+            for m in ("ppo", "bc-ppo")}
         analysis["secondary"][family] = {
             "initialization_at_matched_ppo_updates": interval(values(result, "bc-ppo", family) - values(result, "ppo-short", family), spec),
             "entropy_difference_in_differences": interval(
@@ -52,12 +58,18 @@ def analyze(result):
             "adaptive_minus_fixed": interval(values(result, "adaptive-imitation", family) - values(result, "fixed-imitation", family), spec),
             "adaptive_minus_bc_ppo": interval(values(result, "adaptive-imitation", family) - values(result, "bc-ppo", family), spec),
         }
+    standard_effect = values(result, "bc-ppo", "standard") - values(result, "ppo", "standard")
+    for family in ("dense", "barrier"):
+        effect = values(result, "bc-ppo", family) - values(result, "ppo", family)
+        analysis["shift_change"][family] = interval(effect - standard_effect, spec)
     family = spec["ablation_family"]
     for override in spec["ablations"]:
         setting = override["name"]
         delta = values(result, "bc-ppo", family, setting) - values(result, "ppo", family, setting)
         main_delta = values(result, "bc-ppo", family) - values(result, "ppo", family)
-        analysis["ablations"][setting] = {"effect": interval(delta, spec), "change_from_main": interval(delta - main_delta, spec)}
+        analysis["ablations"][setting] = {"effect": interval(delta, spec), "change_from_main": interval(delta - main_delta, spec),
+                                          "ppo": interval(values(result, "ppo", family, setting), spec),
+                                          "bc-ppo": interval(values(result, "bc-ppo", family, setting), spec)}
     return analysis
 
 
@@ -79,6 +91,7 @@ def figures(result, analysis, directory):
            title="Adaptation at matched interaction and actor-update budgets")
     ax.invert_yaxis()
     fig.savefig(directory / "paired-effects.svg", metadata={"Date": None})
+    fig.savefig(directory / "paired-effects.png", dpi=160)
     plt.close(fig)
     fig, axes = plt.subplots(1, 3, figsize=(12, 3.8), sharey=True, constrained_layout=True)
     colors = ["#526b82", "#32705d", "#9f7497", "#c2813e"]
@@ -97,6 +110,7 @@ def figures(result, analysis, directory):
     axes[-1].legend(fontsize=8, loc="upper right")
     fig.suptitle("Mean ± seed SD; changing occupancy does not change these probe inputs")
     fig.savefig(directory / "probe-entropy.svg", metadata={"Date": None})
+    fig.savefig(directory / "probe-entropy.png", dpi=160)
     plt.close(fig)
     fig, axes = plt.subplots(1, 3, figsize=(12, 4), sharey=True, constrained_layout=True)
     methods = ["bc", "ppo", "bc-ppo", "bc-ppo-entropy", "adaptive-imitation", "dagger"]
@@ -110,6 +124,7 @@ def figures(result, analysis, directory):
     axes[0].set_ylabel("Held-out target success (%)")
     axes[-1].legend()
     fig.savefig(directory / "action-selection.svg", metadata={"Date": None})
+    fig.savefig(directory / "action-selection.png", dpi=160)
     plt.close(fig)
 
 
@@ -125,6 +140,7 @@ def failures(result, path):
             continue
         garden_record = next(g for g in result["manifest"][f"test/{family}"] if g["id"] == record["world_id"])
         garden = garden_from(garden_record)
+        sampled = next(e for e in run["evaluation"][family]["sampled"]["episodes"] if e["world_id"] == record["world_id"])
         world = World(garden)
         positions = [world.pos]
         for action in record["actions"]:
@@ -138,9 +154,52 @@ def failures(result, path):
                   f"Expert actions: `{route(garden.cells, garden.start, garden.goal)}`.", "",
                   f"Policy actions: `{record['actions']}`.", "", f"Visited positions: `{positions}`.", "",
                   f"Unique positions: {len(set(positions))}; recorded actions: {record['steps']}.", "",
+                  f"The same actor's separately seeded sampled evaluation on this world ended in **{sampled['outcome']}**",
+                  f"after {sampled['steps']} steps. Sampled actions: `{sampled['actions']}`.", "",
                   "A repeated position under greedy reactive inference can produce a deterministic loop.",
                   "This trace establishes behavior, not whether entropy, aliasing, or optimization caused it.", ""]
     path.write_text("\n".join(lines) + "\n")
+
+
+def interpretation(analysis):
+    lines = ["The greedy BC→PPO advantage is " + ", ".join(
+        f"{100 * analysis['primary'][f]['mean']:.2f} percentage points on {f}" for f in FAMILIES) + "."]
+    if analysis["primary"]["dense"]["low"] <= 0 <= analysis["primary"]["dense"]["high"]:
+        lines.append("The dense interval includes zero.")
+    if all(e["high"] < 0 for e in analysis["shift_change"].values()):
+        lines.append("The measured benefit is smaller on both shifted panels than on the standard panel.")
+    if not any(e["high"] < 0 for e in analysis["primary"].values()):
+        lines.append("This run does not show a reliable reversal into negative transfer.")
+    lines.append("")
+    if all(analysis["secondary"][f]["initialization_at_matched_ppo_updates"]["low"] > 0 for f in FAMILIES):
+        lines += ["The same-subsequent-PPO-update controls still favor BC initialization.",
+                  "That makes the optimizer allocation cost part of the explanation: initialization",
+                  "benefit and benefit at a fixed total update budget are different estimands.", ""]
+    contains_zero = lambda e: e["low"] <= 0 <= e["high"]
+    if all(contains_zero(analysis["secondary"][f]["entropy_difference_in_differences"]) for f in FAMILIES):
+        lines += ["Stronger entropy does not establish a BC-specific gain: all three entropy",
+                  "difference-in-differences intervals include zero."]
+    if all(contains_zero(analysis["secondary"][f]["adaptive_minus_bc_ppo"]) for f in FAMILIES):
+        lines += ["The adaptive rule also fails to convincingly outperform plain BC→PPO in these",
+                  "panels. These negative or inconclusive tests are retained rather than replaced",
+                  "by a winning variant."]
+    lines += ["", "On dense terrain, PPO succeeds on "
+              f"{100 * analysis['means']['dense']['ppo']['greedy']['mean']:.2f}% of worlds greedily and "
+              f"{100 * analysis['means']['dense']['ppo']['sampled']['mean']:.2f}% when sampled. "
+              "BC→PPO's sampled score is "
+              f"{100 * analysis['means']['dense']['bc-ppo']['sampled']['mean']:.2f}%."]
+    if analysis["means"]["dense"]["ppo"]["sampled"]["mean"] > analysis["means"]["dense"]["ppo"]["greedy"]["mean"]:
+        lines += ["The sampled/greedy gap and recorded cycles point to an action-selection limitation",
+                  "of the reactive controller, without identifying a BC-specific training mechanism."]
+    stronger = [(name, effect) for name, effect in analysis["ablations"].items() if effect["change_from_main"]["low"] > 0]
+    if stronger:
+        lines += ["", "The ablations add a condition: " + "; ".join(
+            f"{name} raises the barrier pretraining advantage to {100 * effect['effect']['mean']:.2f} points"
+            for name, effect in stronger) + ".",
+            "Reward and network choices change the value of initialization at this budget.",
+            "The absolute scores below show whether the larger effect comes from BC→PPO improving",
+            "or PPO deteriorating; these are exploratory, one-factor comparisons."]
+    return lines + [""]
 
 
 def report(result, analysis, path, raw_path):
@@ -156,6 +215,10 @@ def report(result, analysis, path, raw_path):
              "[Protocol](research-protocol.md) · [Primary-source background](research-background.md) ·",
              "[Raw maps, all actors and episodes](../research/results.json.gz) ·",
              "[Machine-readable analysis](../research/analysis.json) · [Failure traces](research-failures.md)", "",
+             *interpretation(analysis),
+             "The full protocol was committed before training in "
+             "[1cc671b](https://github.com/shunhe-wang/critterlab/commit/1cc671ba255439f6c76166d89fa6064d7d723b6c).",
+             "The interpretation here was written after inspecting the executed results.", "",
              "## Primary finding", "", "Effects are **BC→PPO minus PPO**, in percentage points, on held-out worlds",
              "of the family used for PPO training. Brackets are 95% paired-seed percentile",
              "bootstrap intervals, conditional on the fixed map and demonstration panels.", "",
@@ -165,6 +228,23 @@ def report(result, analysis, path, raw_path):
         effect = analysis["primary"][family]
         lines.append(f"| {family} | {format_effect(effect)} | " + ", ".join(f"{100 * v:+.1f}" for v in effect["paired_values"]) + " |")
     lines += ["", "![Paired effects with seed-level uncertainty](research-figures/paired-effects.svg)", "",
+              "Change in the greedy pretraining effect relative to standard terrain",
+              "(exploratory paired difference-of-differences):", "",
+              "| Shifted family | Shifted effect − standard effect [95% interval] |", "|---|---:|"]
+    for family in ("dense", "barrier"):
+        lines.append(f"| {family} | {format_effect(analysis['shift_change'][family])} |")
+    lines += ["", "These comparisons concern different frozen task panels; they do not isolate",
+              "obstacle density or topology from the other distribution changes.", "",
+              "The declared sampled-policy evaluation gives a separate sensitivity contrast:", "",
+              "| Adaptation terrain | Sampled BC→PPO − PPO [95% paired interval] |",
+              "|---|---:|"]
+    for family in FAMILIES:
+        lines.append(f"| {family} | {format_effect(analysis['sampled_effects'][family])} |")
+    lines += ["", "These sampled estimates condition on one independent evaluation-RNG panel.",
+              "Different greedy and sampled conclusions concern deployment/action selection",
+              "as well as learning. A deterministic reactive controller that revisits a position",
+              "in a fixed map repeats its decision and can remain in a cycle; stochastic action",
+              "selection can escape it. The recorded traces expose this behavior directly.", "",
               "## All methods", "", "Mean goal success across ten trained seeds. Each seed gets the same 128 frozen",
               "worlds per evaluation family. Greedy inference matches the browser policy;", "sampled inference tests the training policy's action distribution.", "",
               "| Method | Standard greedy / sampled | Dense greedy / sampled | Barrier greedy / sampled |",
@@ -179,6 +259,12 @@ def report(result, analysis, path, raw_path):
               "different test panels, not extra independent BC training seeds. DAgger queries",
               "additional target-state expert labels and has a different supervision budget.", "",
               "![Greedy and sampled policies](research-figures/action-selection.svg)", "",
+              "Exploratory sampled-minus-greedy effects on each same trained actor, in",
+              "percentage points with paired-seed intervals (no multiplicity correction):", "",
+              "| Method | Standard | Dense | Barrier |", "|---|---:|---:|---:|"]
+    for method in ("ppo", "bc-ppo"):
+        lines.append(f"| {LABELS[method]} | " + " | ".join(format_effect(analysis["action_selection_gaps"][f][method]) for f in FAMILIES) + " |")
+    lines += ["",
               "## Mechanism tests and adaptive method", "",
               "All following intervals are exploratory and uncorrected for multiple comparisons.", "",
               "| Contrast (percentage points) | Standard | Dense | Barrier |",
@@ -207,10 +293,11 @@ def report(result, analysis, path, raw_path):
               "visited states are not automatically useful exploration. Entropy is in nats.", "",
               "## One-factor ablations", "", "Barrier adaptation, ten seeds per condition. Change from main subtracts the",
               "primary barrier effect using the same seed blocks. This is not a full factorial.", "",
-              "| Change | BC→PPO − PPO [95% interval] | Effect change from main [95% interval] |",
-              "|---|---:|---:|"]
+              "| Change | PPO greedy | BC→PPO greedy | BC→PPO − PPO [95% interval] | Effect change from main [95% interval] |",
+              "|---|---:|---:|---:|---:|"]
     for name, ablation in analysis["ablations"].items():
-        lines.append(f"| {name} | {format_effect(ablation['effect'])} | {format_effect(ablation['change_from_main'])} |")
+        lines.append(f"| {name} | {100 * ablation['ppo']['mean']:.2f}% | {100 * ablation['bc-ppo']['mean']:.2f}% | "
+                     f"{format_effect(ablation['effect'])} | {format_effect(ablation['change_from_main'])} |")
     lines += ["", "## Zero-shot transfer is a separate question", "",
               "These models are trained **only on standard terrain** and evaluated without",
               "any dense/barrier adaptation. Do not interpret this table as target learning.", "",
@@ -232,6 +319,12 @@ def report(result, analysis, path, raw_path):
     lines += ["", "## Resource accounting", "",
               "Means across main-study family/seed blocks. Updates and label presentations",
               "are counts, not equal FLOPs. All source demonstrations are reused across seeds.", "",
+              f"The shared main source dataset has {spec['demonstration_worlds']} worlds and "
+              f"{next(r['demo_transitions'] for r in result['runs'] if r['setting']=='main')} labeled transitions.",
+              "Raw `source_expert_queries` records that prepared dataset's size for every",
+              "run, including PPO's read-only expert-state diagnostics. PPO's zero source",
+              "label presentations mean no expert label enters its optimization. Do not sum",
+              "the shared source count across model seeds. DAgger's new queries are separate.", "",
               "| Method | Env steps | Actor / critic updates | Source label presentations | New target expert queries | Training seconds |",
               "|---|---:|---:|---:|---:|---:|"]
     for method in spec["methods"]:
@@ -249,6 +342,8 @@ def report(result, analysis, path, raw_path):
               "Smoke results are explicitly marked non-protocol. The full artifact contains",
               "all final actor weights and 268,800 evaluation action sequences, and the audit",
               "recomputes outcomes, greedy/sampled inference, metrics, split identities, and budgets.", "",
+              "Outcomes are replayed exactly. Actor checks allow 1e-6 probability differences",
+              "at greedy ties or sampled CDF boundaries across CPUs, without replacing recorded actions.", "",
               f"Raw artifact SHA-256: `{hashlib.sha256(raw_path.read_bytes()).hexdigest()}`.", "",
               "## Limits and next falsifying experiments", "",
               "This run conditions on one source dataset and one finite pool per family.",
