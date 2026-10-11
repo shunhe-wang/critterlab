@@ -41,8 +41,11 @@ confidence. No external system actions are available.
 
 Human teaching performs real supervised gradient updates on a browser-local
 copy. It can overfit a route or harm previous behavior. It is not part of the
-published offline controlled comparison. Refreshing clears the personal model;
-exported replay JSON includes adapted weights for inspection.
+published offline controlled comparison. The companion app saves personal
+weights and teaching actions in browser storage; pet backups and replay JSON
+include adapted weights for inspection. Care needs, friendship stages, saved
+memories and command-based dialogue are game rules, not learned capabilities
+or additional network inputs. The actor still has no recurrent state.
 
 ## Distribution and reproducibility
 

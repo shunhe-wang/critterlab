@@ -1,13 +1,13 @@
 {
   "name": "critterlab",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --import tsx --test web/engine.test.ts",
+    "test": "node --import tsx --test web/*.test.ts",
     "check": "npm test && npm run build"
   },
   "devDependencies": {

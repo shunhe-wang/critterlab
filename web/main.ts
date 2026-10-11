@@ -1,6 +1,7 @@
 import './style.css';
 import { ACTIONS, SIZE, LIMIT, World, generate, route, cloneGarden, probabilities, type Policy } from './engine';
 import { teach, type Lesson } from './learn';
+import { SAVE_KEY, MAX_BACKUP_BYTES, newPet, advance, care, adventure, remember, mood, stage, intent, chat, decodeSave, type Save, type Care } from './pet';
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id)! as T;
 const canvas = el<HTMLCanvasElement>('garden'), ctx = canvas.getContext('2d')!;
@@ -13,13 +14,141 @@ let policies: Record<string, Policy> = {};
 let history = [{ pos: world.pos, steps: 0, outcome: 'running' }];
 let episodeActions: number[] = [], demonstration: Lesson[] = [], lessons: Lesson[] = [];
 let animationTimer: ReturnType<typeof setInterval> | undefined;
+let pet = newPet(Date.now()), saved: Save | undefined, storageBroken = false, training = false;
+let lastStorage: string | null = null;
+try { lastStorage = localStorage.getItem(SAVE_KEY); if (lastStorage) saved = decodeSave(lastStorage); }
+catch { storageBroken = true; el('replace-broken').classList.remove('hidden'); }
+if (saved) restoreSession(saved);
 const notes: Record<string, string> = {
   'bc-ppo': 'A head start from 256 expert routes, followed by 65,536 reward-learning steps.',
   'ppo': '65,536 steps of exploring and learning from rewards. No demonstrations.',
   'bc': 'Learned to imitate 256 expert routes. No reward-based fine-tuning.',
   'untrained': 'The same network before training. Curiosity without experience.',
-  'personal': 'Updated neural weights from your routes. Session only. A familiar route can overfit.'
+  'personal': 'Your saved neural weights, updated from your routes. A familiar route can overfit.'
 };
+
+function restoreSession(record: Save) {
+  pet = advance(record.pet, Date.now()); garden = cloneGarden(record.garden); mode = record.mode;
+  episodeActions = [...record.actions]; demonstration = record.demonstration; lessons = record.lessons;
+  if (record.personal) policies.personal = record.personal; else delete policies.personal;
+  Array.from(brain.options).filter(o => o.value === 'personal').forEach(o => o.remove());
+  if (record.personal) brain.add(new Option('Your saved lessons', 'personal'));
+  brain.value = record.brain;
+  world = new World(cloneGarden(garden)); history = [{ pos: world.pos, steps: 0, outcome: 'running' }];
+  for (const action of episodeActions) { world.step(action); history.push({ pos: world.pos, steps: world.steps, outcome: world.outcome }); }
+  frame = history.length - 1;
+  el<HTMLInputElement>('seed').value = String(garden.seed); el<HTMLInputElement>('shifted').checked = record.shifted;
+  renderMode();
+  el('teach').classList.toggle('hidden', mode !== 'play' || world.outcome !== 'success' || !demonstration.length);
+}
+function snapshot(): Save {
+  return { version: 1, pet, garden, shifted: el<HTMLInputElement>('shifted').checked, brain: brain.value,
+    mode: mode as Save['mode'], actions: episodeActions, demonstration, lessons, ...(policies.personal ? { personal: policies.personal } : {}) };
+}
+function save(): boolean {
+  if (storageBroken) { el('save-status').textContent = 'Previous save unreadable · this pet is temporary'; return false; }
+  try {
+    const current = localStorage.getItem(SAVE_KEY);
+    if (current && current !== lastStorage) {
+      if (!training) { syncSave(current); return true; }
+      return false;
+    }
+    const encoded = JSON.stringify(snapshot()); localStorage.setItem(SAVE_KEY, encoded); lastStorage = encoded;
+    el('save-status').textContent = 'Autosaved on this browser · no cloud sync';
+  }
+  catch { el('save-status').textContent = 'Browser storage unavailable · download a backup'; }
+  return false;
+}
+function syncSave(encoded: string) {
+  const record = decodeSave(encoded); lastStorage = encoded; stop(); restoreSession(record); update(false);
+  el('backup-message').textContent = 'Loaded your pet’s latest changes from another tab. This adventure is paused.';
+}
+function renderPet() {
+  pet = advance(pet, Date.now());
+  if (!running) runButton.textContent = `▶ Let ${pet.name} explore`;
+  document.querySelector<HTMLButtonElement>('[data-mode="watch"]')!.textContent = `Watch ${pet.name}`;
+  document.querySelectorAll('[data-pet-name]').forEach(node => node.textContent = pet.name);
+  el('pet-stage').textContent = stage(pet); el('pip-mood').textContent = mood(pet);
+  el('pet-age').textContent = `Day ${Math.max(1, Math.floor((pet.clock - pet.born) / 86_400_000) + 1)} together`;
+  for (const need of ['fullness', 'energy', 'affection'] as const) {
+    el<HTMLMeterElement>(need).value = pet[need]; el(`${need}-value`).textContent = `${Math.round(pet[need])}%`;
+  }
+  const next = pet.growth < 40 ? 40 : pet.growth < 120 ? 120 : 120;
+  el<HTMLProgressElement>('growth').max = next; el<HTMLProgressElement>('growth').value = Math.min(next, pet.growth);
+  el('growth-note').textContent = pet.growth < 120 ? `${pet.growth} / ${next} friendship points · ${pet.growth < 40 ? 'Scout' : 'Trailkeeper'} next` : 'Trailkeeper · a friendship grown over time';
+  el('adventures').textContent = `${pet.adventures} adventures`;
+  el('nap').textContent = pet.sleepUntil > pet.clock ? '☀ Wake up' : '☾ Little nap';
+  el('memory-count').textContent = `${pet.memories.length} keepsakes`;
+  el('memories').replaceChildren(...pet.memories.slice(-8).reverse().map(memory => {
+    const item = document.createElement('li'), time = document.createElement('time');
+    time.textContent = new Date(memory.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    item.append(time, document.createTextNode(memory.text)); return item;
+  }));
+  const log = el('chat-log'), signature = JSON.stringify([pet.name, pet.chat]);
+  if (log.dataset.signature !== signature) {
+    log.replaceChildren(...pet.chat.map(message => {
+      const bubble = document.createElement('div'), speaker = document.createElement('b');
+      bubble.className = `chat-message ${message.speaker}`; speaker.textContent = message.speaker === 'you' ? 'YOU' : pet.name;
+      bubble.append(speaker, document.createTextNode(message.text)); return bubble;
+    }));
+    log.dataset.signature = signature; log.scrollTop = log.scrollHeight;
+  }
+}
+function say(message: string) { pet = chat(pet, 'pet', message); renderPet(); save(); draw(); }
+function wake() { pet = { ...advance(pet, Date.now()), sleepUntil: 0 }; }
+function doCare(kind: Care) {
+  if (kind === 'nap' && pet.sleepUntil > Date.now()) { wake(); say('Stretch… ready when you are.'); return; }
+  if (kind === 'nap') stop();
+  const result = care(pet, kind, Date.now()); pet = result.pet;
+  el('care-message').textContent = result.message; say(result.message);
+}
+function talk(text: string) {
+  pet = chat(advance(pet, Date.now()), 'you', text);
+  const command = intent(text);
+  if (command === 'feed' || command === 'cuddle' || command === 'nap') { doCare(command); return; }
+  if (command === 'wake') { wake(); say('A little stretch. A very big yawn.'); return; }
+  if (command === 'explore') {
+    if (!policies[brain.value]) { say('My navigation brain is still loading. Try again in a moment.'); return; }
+    if (mode !== 'watch') setMode('watch');
+    if (!running) runButton.click();
+    say('Let’s try the berry patch together. My little neural brain picks each step.');
+    el('garden').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' }); return;
+  }
+  if (command === 'needs') say(`${mood(pet)} My fullness is ${Math.round(pet.fullness)}%, energy ${Math.round(pet.energy)}%, and affection ${Math.round(pet.affection)}%.`);
+  else if (command === 'memories') say(pet.memories.at(-1)?.text ?? 'Our story is just beginning.');
+  else if (command === 'lessons') say(lessons.length ? `You’ve shared ${lessons.length} demonstrated steps with me. My adapted neural weights are saved here. New gardens might still trip me up.` : 'Show me a successful route in Take control, then press Teach. That really updates my neural weights.');
+  else if (command === 'hello') say(`Hi! I’m ${pet.name}. ${mood(pet)} Shall we have a snack or try an adventure?`);
+  else say('My word collection is small. Try “snack”, “cuddle”, “nap”, “wake”, “explore”, “memories”, “lessons” or “how are you?”.');
+}
+
+document.querySelectorAll<HTMLButtonElement>('[data-care]').forEach(button => button.onclick = () => doCare(button.dataset.care as Care));
+document.querySelectorAll<HTMLButtonElement>('[data-say]').forEach(button => button.onclick = () => talk(button.dataset.say!));
+el('chat-form').onsubmit = event => { event.preventDefault(); const input = el<HTMLInputElement>('chat-input'), text = input.value.trim(); if (text) { talk(text); input.value = ''; } };
+el('rename').onclick = () => { el('name-form').classList.toggle('hidden'); el<HTMLInputElement>('pet-name').value = pet.name; el('pet-name').focus(); };
+el('name-form').onsubmit = event => {
+  event.preventDefault(); const name = el<HTMLInputElement>('pet-name').value.trim().replace(/[\x00-\x1f]/g, '').slice(0, 24);
+  if (!name || name === pet.name) { el('name-form').classList.add('hidden'); return; }
+  pet = remember({ ...advance(pet, Date.now()), name }, `You gave me a name: ${name}.`);
+  el('name-form').classList.add('hidden'); say(`${name}. That’s me! I like the sound of it.`); stop();
+};
+function downloadJSON(record: unknown, filename: string) {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(record, null, 2)], { type: 'application/json' }));
+  const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+el('backup').onclick = () => { renderPet(); downloadJSON(snapshot(), 'critterlab-pet.json'); el('backup-message').textContent = 'Backup includes your companion, garden, lessons and adapted brain. Keep it somewhere safe.'; };
+el('restore').onclick = () => el<HTMLInputElement>('backup-file').click();
+el<HTMLInputElement>('backup-file').onchange = async () => {
+  const input = el<HTMLInputElement>('backup-file'), file = input.files?.[0]; if (!file) return;
+  try {
+    if (training) throw new Error('Wait for the current lesson to finish');
+    if (file.size > MAX_BACKUP_BYTES) throw new Error('Backup exceeds 1 MB');
+    const record = decodeSave(await file.text()); stop(); restoreSession(record); storageBroken = false;
+    try { lastStorage = localStorage.getItem(SAVE_KEY); } catch { /* Backup still works when browser storage is unavailable. */ }
+    el('replace-broken').classList.add('hidden'); update(); el('backup-message').textContent = `${pet.name} is home. Backup restored; the adventure is paused.`;
+  } catch (error) { el('backup-message').textContent = `Could not restore: ${error instanceof Error ? error.message : 'invalid backup'}. Your current pet is still here.`; }
+  input.value = '';
+};
+el('replace-broken').onclick = () => { storageBroken = false; el('replace-broken').classList.add('hidden'); save(); };
 
 function critter(c: CanvasRenderingContext2D, x: number, y: number, scale: number, bounce = 0, success = false) {
   c.save(); c.translate(x, y + bounce); c.scale(scale, scale);
@@ -29,11 +158,14 @@ function critter(c: CanvasRenderingContext2D, x: number, y: number, scale: numbe
   c.fillStyle = '#a9c4a1'; c.beginPath(); c.roundRect(-26, -20, 52, 46, 19); c.fill();
   c.fillStyle = '#bad2ad'; c.beginPath(); c.ellipse(0, 12, 17, 13, 0, 0, Math.PI * 2); c.fill();
   c.fillStyle = '#2e453a';
-  if (success) { c.lineWidth = 2; c.strokeStyle = '#2e453a'; for (const ex of [-9, 9]) { c.beginPath(); c.arc(ex, -2, 4, Math.PI, 0); c.stroke(); } }
+  if (pet.sleepUntil > pet.clock) { c.lineWidth = 2; c.strokeStyle = '#2e453a'; for (const ex of [-9, 9]) { c.beginPath(); c.moveTo(ex - 4, -2); c.lineTo(ex + 4, -2); c.stroke(); } }
+  else if (success) { c.lineWidth = 2; c.strokeStyle = '#2e453a'; for (const ex of [-9, 9]) { c.beginPath(); c.arc(ex, -2, 4, Math.PI, 0); c.stroke(); } }
   else { c.beginPath(); c.ellipse(-9, -3, 3, 4, 0, 0, Math.PI * 2); c.ellipse(9, -3, 3, 4, 0, 0, Math.PI * 2); c.fill(); c.fillStyle = '#fffdeb'; c.fillRect(-10, -5, 1.5, 1.5); c.fillRect(8, -5, 1.5, 1.5); }
   c.strokeStyle = '#547460'; c.lineWidth = 1.7; c.beginPath(); c.arc(0, 5, 4, 0, Math.PI); c.stroke();
   c.fillStyle = '#cfb39a'; c.globalAlpha = .6; c.beginPath(); c.ellipse(-17, 5, 4, 2, 0, 0, Math.PI * 2); c.ellipse(17, 5, 4, 2, 0, 0, Math.PI * 2); c.fill(); c.globalAlpha = 1;
   c.fillStyle = '#73997b'; c.beginPath(); c.ellipse(-14, 25, 7, 4, 0, 0, Math.PI * 2); c.ellipse(14, 25, 7, 4, 0, 0, Math.PI * 2); c.fill();
+  if (pet.growth >= 40) { c.fillStyle = '#c88552'; c.fillRect(-22, 14, 44, 6); c.beginPath(); c.moveTo(12, 17); c.lineTo(24, 34); c.lineTo(15, 34); c.closePath(); c.fill(); }
+  if (pet.growth >= 120) { c.fillStyle = '#edd286'; c.beginPath(); c.arc(0, 17, 4, 0, Math.PI * 2); c.fill(); }
   c.restore();
 }
 
@@ -74,16 +206,16 @@ function draw(time = 0) {
   portraitCtx.clearRect(0, 0, 140, 140); critter(portraitCtx, 70, 72, 1.65, 0, shown.outcome === 'success');
 }
 
-function stop() { running = false; if (animationTimer) clearInterval(animationTimer); animationTimer = undefined; runButton.textContent = '▶ Let Pip explore'; }
+function stop() { running = false; if (animationTimer) clearInterval(animationTimer); animationTimer = undefined; runButton.textContent = `▶ Let ${pet.name} explore`; }
 function reset() {
   stop(); world = new World(cloneGarden(garden)); history = [{ pos: world.pos, steps: 0, outcome: 'running' }];
   frame = 0; episodeActions = []; demonstration = []; el('teach').classList.add('hidden'); el('teach-note').textContent = ''; update();
 }
-function update() {
+function update(persist = true) {
+  renderPet(); if (persist && save()) return;
   const shown = history[frame];
   el('steps').innerHTML = `${String(shown.steps).padStart(2, '0')} <small>/ ${LIMIT}</small>`;
   el('outcome').textContent = shown.outcome === 'running' ? (shown.steps ? 'Exploring' : 'Ready') : ({ success: 'Found it!', hazard: 'Bramble!', timeout: 'Got stuck' }[shown.outcome] ?? shown.outcome);
-  el('pip-mood').textContent = shown.outcome === 'success' ? 'A very good berry day.' : shown.outcome === 'hazard' ? 'Still figuring things out.' : 'Small paws. Big ambitions.';
   el('garden-id').textContent = `GARDEN #${garden.seed}`;
   el('brain-note').textContent = notes[brain.value];
   timeline.max = String(history.length - 1); timeline.value = String(frame); el('frame-label').textContent = `${frame} / ${history.length - 1}`;
@@ -97,17 +229,20 @@ function update() {
 }
 function act(action: number) {
   if (world.done || frame !== history.length - 1) return;
+  if (pet.sleepUntil > pet.clock) wake();
   if (mode === 'play') demonstration.push({ observation: world.obs(), action });
   world.step(action); episodeActions.push(action); history.push({ pos: world.pos, steps: world.steps, outcome: world.outcome }); frame = history.length - 1;
-  if (world.done) { stop(); if (mode === 'play' && world.outcome === 'success') el('teach').classList.remove('hidden'); }
+  if (world.done) { stop(); pet = adventure(pet, garden, world.outcome, Date.now()); if (mode === 'play' && world.outcome === 'success') el('teach').classList.remove('hidden'); }
   update();
 }
-function setMode(next: string) {
-  stop(); mode = next;
+function renderMode() {
+  document.querySelector<HTMLButtonElement>('[data-mode="watch"]')!.textContent = `Watch ${pet.name}`;
   document.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach(b => { b.classList.toggle('active', b.dataset.mode === mode); b.setAttribute('aria-pressed', String(b.dataset.mode === mode)); });
   el('play-controls').classList.toggle('hidden', mode !== 'play'); el('edit-controls').classList.toggle('hidden', mode !== 'edit');
   runButton.disabled = mode !== 'watch' || !policies[brain.value];
-  reset(); canvas.focus({ preventScroll: true });
+}
+function setMode(next: string) {
+  stop(); mode = next; renderMode(); reset(); canvas.focus({ preventScroll: true });
 }
 function paint(index: number) {
   if (mode !== 'edit' || index === garden.start || index < 0 || index >= 49) return;
@@ -128,6 +263,7 @@ brain.onchange = () => { reset(); runButton.disabled = mode !== 'watch' || !poli
 runButton.onclick = () => {
   if (!policies[brain.value] || mode !== 'watch') return;
   if (running) { stop(); return; }
+  wake();
   if (world.done || frame !== history.length - 1) reset();
   running = true; runButton.textContent = 'Ⅱ Pause exploring';
   animationTimer = setInterval(() => { const ps = probabilities(policies[brain.value], world.obs()); act(ps.indexOf(Math.max(...ps))); }, 350);
@@ -140,7 +276,7 @@ el('new-garden').onclick = () => {
 };
 el<HTMLInputElement>('shifted').onchange = () => { garden = generate(Number(el<HTMLInputElement>('seed').value) >>> 0, el<HTMLInputElement>('shifted').checked); reset(); };
 timeline.oninput = () => { stop(); frame = Number(timeline.value); update(); };
-canvas.onclick = event => { const rect = canvas.getBoundingClientRect(); const x = Math.floor(((event.clientX - rect.left) * 700 / rect.width - 84) / 76), y = Math.floor(((event.clientY - rect.top) * 700 / rect.height - 70) / 76); if (x >= 0 && x < 7 && y >= 0 && y < 7) paint(y * 7 + x); };
+canvas.onclick = event => { const rect = canvas.getBoundingClientRect(); const x = Math.floor(((event.clientX - rect.left) * 700 / rect.width - 84) / 76), y = Math.floor(((event.clientY - rect.top) * 700 / rect.height - 70) / 76); if (x >= 0 && x < 7 && y >= 0 && y < 7) { if (mode === 'edit') paint(y * 7 + x); else if (y * 7 + x === history[frame].pos) doCare('cuddle'); } };
 el('paint-selected').onclick = () => paint(Number(el<HTMLSelectElement>('tile-index').value));
 el('tile-index').innerHTML = Array.from({ length: 25 }, (_, i) => { const x = i % 5 + 1, y = Math.floor(i / 5) + 1; return `<option value="${y * 7 + x}">Tile ${x}, ${y}</option>`; }).join('');
 document.addEventListener('keydown', event => {
@@ -150,20 +286,21 @@ document.addEventListener('keydown', event => {
 });
 el('teach').onclick = async () => {
   if (mode !== 'play' || world.outcome !== 'success' || !demonstration.length || !policies[brain.value]) return;
-  const button = el<HTMLButtonElement>('teach'); button.disabled = true; button.textContent = 'Learning from your footsteps…';
-  lessons = [...lessons, ...demonstration].slice(-2400);
+  const button = el<HTMLButtonElement>('teach'); button.disabled = true; training = true; button.textContent = 'Learning from your footsteps…';
+  const nextLessons = [...lessons, ...demonstration].slice(-2400);
   try {
-    policies.personal = await teach(policies[brain.value], lessons);
-    if (!Array.from(brain.options).some(o => o.value === 'personal')) brain.add(new Option('Your lessons (session only)', 'personal'));
+    policies.personal = await teach(policies[brain.value], nextLessons); lessons = nextLessons;
+    if (!Array.from(brain.options).some(o => o.value === 'personal')) brain.add(new Option('Your saved lessons', 'personal'));
     brain.value = 'personal'; demonstration = [];
+    pet = remember(advance(pet, Date.now()), `Learned from your footsteps. ${lessons.length} demonstrated steps saved in my brain.`);
     el('teach-note').textContent = `Neural weights updated from ${lessons.length} demonstrated actions. Try a new garden to test transfer.`;
     button.classList.add('hidden'); update();
-  } finally { button.disabled = false; button.textContent = 'Teach Pip this route ✳'; }
+  } catch { el('teach-note').textContent = 'That lesson could not finish. Your previous saved brain is still here.'; }
+  finally { training = false; button.disabled = false; button.textContent = 'Teach this route ✳'; save(); }
 };
 el('download').onclick = () => {
   const record = { version: 1, garden, policy: brain.value, policy_weights: policies[brain.value], actions: episodeActions, frames: history, teaching_actions: lessons.length };
-  const url = URL.createObjectURL(new Blob([JSON.stringify(record, null, 2)], { type: 'application/json' }));
-  const a = document.createElement('a'); a.href = url; a.download = `critterlab-${garden.seed}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  downloadJSON(record, `critterlab-${garden.seed}.json`);
 };
 
 interface Experiment { steps: number; summary: Record<string, Record<string, { mean: number; std: number }>>; disjoint_audit: { splits: Record<string, { episodes: number; summary: Record<string, { mean: number; std: number }> }> }; curves: { seed: number; method: string; points: { steps: number; success_rate: number }[] }[] }
@@ -191,16 +328,24 @@ function showExperiment(data: Experiment) {
   el('learning-chart').innerHTML = svg;
 }
 
-runButton.disabled = true; update();
+renderMode(); runButton.disabled = true; stop(); update();
 async function load() {
   try {
     const names = ['untrained', 'bc', 'ppo', 'bc-ppo'];
     const fetched = await Promise.all(names.map(async name => { const r = await fetch(`${import.meta.env.BASE_URL}models/${name}.json`); if (!r.ok) throw new Error('Model unavailable'); return r.json() as Promise<Policy>; }));
-    policies = Object.fromEntries(names.map((name, i) => [name, fetched[i]])); runButton.disabled = false; update();
+    policies = { ...policies, ...Object.fromEntries(names.map((name, i) => [name, fetched[i]])) }; renderMode(); update();
     const response = await fetch(`${import.meta.env.BASE_URL}data/experiment.json`); if (!response.ok) throw new Error('Experiment unavailable'); showExperiment(await response.json());
   } catch { el('brain-note').textContent = 'The model files could not load. Refresh or run the local build from GitHub.'; }
 }
 void load();
+setInterval(() => { renderPet(); draw(); }, 5000);
+document.addEventListener('visibilitychange', () => { if (document.hidden) { stop(); renderPet(); save(); } });
+window.addEventListener('pagehide', () => { renderPet(); save(); });
+window.addEventListener('storage', event => {
+  if (event.key !== SAVE_KEY || !event.newValue || event.newValue === lastStorage || training) return;
+  try { syncSave(event.newValue); }
+  catch { el('backup-message').textContent = 'Another tab wrote an unreadable save. Download a backup of your current pet.'; }
+});
 if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
   function animate(time: number) { if (running) draw(time); requestAnimationFrame(animate); }
   requestAnimationFrame(animate);

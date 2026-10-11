@@ -21,15 +21,27 @@ walking into brambles. Play its garden, change the terrain, compare trained
 brains, and teach it a route yourself. Every autonomous move comes from the
 network's action probabilities.
 
+**Now a companion you can return to:** name your pet, share snacks, cuddle,
+take naps and build a little history together. The garden, current adventure,
+lessons and adapted neural weights autosave in your browser. Friendship stages
+unlock a scarf and a keepsake badge. Your pet never dies from time away.
+
 ## What you can do
 
 - **Watch** four real checkpoints: untrained, demonstrations only, rewards only,
   and demonstrations followed by reward learning.
 - **Play** with arrow keys, WASD, or touch controls.
+- **Raise** a named companion with time-based needs, cosmetic growth and a
+  persistent adventure diary. Care has cooldowns; friendship isn't a neural score.
+- **Talk** using a small command vocabulary: “snack”, “cuddle”, “nap”, “wake”,
+  “explore”, “how are you?”, “memories” and “lessons”. Replies use actual pet
+  state. This is authored dialogue, not a language model.
 - **Teach** a successful route: cross-entropy backpropagation updates a copy of
-  the neural weights inside your browser. Your lessons last for this session;
-  export the replay to keep the actual adapted weights. Try another garden to
+  the neural weights inside your browser. Your lessons and actual adapted
+  weights persist across refreshes. Try another garden to
   find out whether the lesson transfers.
+- **Keep** your pet with a portable JSON backup. Restore validates the garden,
+  episode replay and model dimensions before replacing your companion.
 - **Edit** rocks, brambles and the berry, using mouse or keyboard-accessible tile
   controls. A separate solver reports solvability; it never acts for Pip.
 - **Inspect** action probabilities, scrub the episode journal, export a replay,
@@ -38,6 +50,11 @@ network's action probabilities.
 Browser inference and teaching require no account, API key, inference server,
 or paid service. Optional Google Fonts have system-font fallbacks. There is no
 analytics or automatic upload of your interactions.
+
+Saves are local to a browser and site origin. There is no account or cloud sync;
+clearing site data removes the pet, so download a backup. Another tab's saved
+changes pause and refresh this tab. [Companion rules and save contract](docs/pet-contract.md)
+describe away-time limits, care rewards and the dialogue boundary.
 
 ## The experiment, actually run
 
@@ -131,8 +148,11 @@ flowchart LR
   P --> J[Portable JSON weights]
   J --> G[Playable TypeScript garden]
   G --> T[Human demonstrations]
-  T --> U[Session-local weight updates]
+  T --> U[Browser neural weight updates]
   U --> G
+  U --> S[Versioned local save + JSON backup]
+  C[Care + companion history] --> S
+  S --> G
   P --> E[Held-out evaluation + replay audit]
 ```
 
@@ -143,15 +163,18 @@ flowchart LR
 | `critterlab/audit.py` | Reproduce outcomes from recorded actions |
 | `web/engine.ts` | Matching world and dense/tanh inference in the browser |
 | `web/learn.ts` | Real browser-side supervised weight updates |
+| `web/pet.ts` | Companion rules, grounded command vocabulary and save validation |
 | `checkpoints/` | All 12 final PyTorch actor state dictionaries |
 | `public/models/` | Four portable seed-0 policies |
 | `results/` | Raw evaluation episodes, training map seeds and overlap audits |
 | `failure-cases/` | Three reproducible failures of learned policies |
 
-## What v0.1 does and does not establish
+## What v0.2 does and does not establish
 
 Pip is a reactive agent observing nearby tiles and the known goal direction. It
-has no language model, persistent memory, or global-map planner. A small model
+has no language model, recurrent neural memory, or global-map planner. The app
+persists a companion diary and adapted weights; neither makes the actor recurrent.
+A small model
 can learn useful behavior and still loop at a rock or oscillate between tiles.
 The demonstration solver has access to information the actor does not have;
 some expert decisions are therefore impossible to reconstruct from one local
