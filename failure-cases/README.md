@@ -1,4 +1,4 @@
-# Three actual policy failures
+# Actual policy failures
 
 These are recorded behavioral failures, not fabricated software bugs. Recreate
 them in the demo using the garden seed and selected brain. The committed demo
@@ -20,8 +20,18 @@ An untrained network's greedy bias is not a random-action baseline. Imitation
 can reproduce useful expert actions yet get stuck in states where local
 information is insufficient. Reward learning reduces many failures but still
 allows deterministic two-state cycles. The last explanation is a hypothesis
-about the mechanism, not an established causal result. A recurrent-policy
-comparison is a useful next experiment; it has not been run here.
+about the mechanism, not an established causal result. A separate
+[recurrent cue-memory comparison](../docs/memory-results.md) has now been run.
+It does not train on these random gardens or fix these cycles.
+
+## Reported seed 67, wilder terrain
+
+The untrained seed-0 actor alternates East/West between tiles 18 and 19 until
+the 48-action timeout. Its repeated probabilities prefer East at tile 18
+(about 26.4%) and West at tile 19 (about 26.6%). Greedy reactive inference has
+no previous-action or visit memory: returning to the same state repeats the
+choice. The trained seed-0 actors also time out here, in a North/South cycle.
+The UI flags repeated tiles and leaves the network's behavior intact.
 
 The current release exposes these failures instead of adding a hidden
 pathfinding fallback. The separate solver only supplies offline demonstrations

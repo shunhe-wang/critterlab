@@ -4,7 +4,7 @@
 
 **A small creature. A real neural network. A little world for learning.**
 
-[Play the garden](https://shunhe-wang.github.io/critterlab/) · [Experiment](docs/results.md) · [Protocol](docs/protocol.md) · [Model card](docs/model-card.md)
+[Play](https://shunhe-wang.github.io/critterlab/) · [Memory experiment](docs/memory-results.md) · [Navigation experiment](docs/results.md) · [Model cards](docs/model-card.md)
 
 [![Verification](https://github.com/shunhe-wang/critterlab/actions/workflows/ci.yml/badge.svg)](https://github.com/shunhe-wang/critterlab/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.12-547460)
@@ -26,6 +26,13 @@ take naps and build a little history together. The garden, current adventure,
 lessons and adapted neural weights autosave in your browser. Friendship stages
 unlock a scarf and a keepsake badge. Your pet never dies from time away.
 
+**New: the memory grove.** A flower gives a clue, then disappears. Can Pip
+remember which berry it meant? A trained 5,508-parameter GRU carries
+32 hidden units between actions. Compare it with a reactive actor trained on
+the same examples and the frozen original brain, or try the clue yourself.
+
+![The memory grove with a vanished-clue task, checkpoint controls and live recurrent state](docs/memory-demo.png)
+
 ## What you can do
 
 - **Watch** four real checkpoints: untrained, demonstrations only, rewards only,
@@ -46,6 +53,9 @@ unlock a scarf and a keepsake badge. Your pet never dies from time away.
   controls. A separate solver reports solvability; it never acts for Pip.
 - **Inspect** action probabilities, scrub the episode journal, export a replay,
   and explore real learning curves and evaluation results.
+- **Experiment with memory** in the [playable grove](https://shunhe-wang.github.io/critterlab/#memory-lab):
+  vary the delay, erase the clue, reset recurrent state, inspect live activations,
+  and download a trial. Finished trials join your pet's diary.
 
 Browser inference and teaching require no account, API key, inference server,
 or paid service. Optional Google Fonts have system-font fallbacks. There is no
@@ -56,7 +66,28 @@ clearing site data removes the pet, so download a backup. Another tab's saved
 changes pause and refresh this tab. [Companion rules and save contract](docs/pet-contract.md)
 describe away-time limits, care rewards and the dialogue boundary.
 
-## The experiment, actually run
+## Memory experiment, actually run
+
+Two new architectures trained on the same 36 expert sequences (330 transitions)
+for 200 Adam updates, with three paired seeds. The protocol and seed-0 demo
+export were declared before training. Test geometry was absent from training.
+
+| Actor | Unseen gardens, delays 2/4/8 | Unseen gardens, delays 16/32 |
+|---|---:|---:|
+| Recurrent GRU | **88.9 ± 19.2%** | **66.7 ± 28.9%** |
+| Retrained reactive | 50.0 ± 0.0% | 50.0 ± 0.0% |
+| Frozen original BC → PPO | 16.7 ± 0.0% | 16.7 ± 0.0% |
+
+Mean ± sample standard deviation over three model seeds; 18 standard and 12
+long-delay cases per seed. These are finite synthetic cases, not a broad
+population estimate. The frozen actor is an out-of-task reference; the retrained
+reactive actor is the controlled comparison. Equal updates do not mean equal
+compute. Erasing the cue reduces GRU success to 50%; swapping it gives 0%.
+Long waits expose substantial seed variation, which is preserved in the results.
+[Report, per-seed scores and controls](docs/memory-results.md) ·
+[Fixed protocol](docs/memory-protocol.md) · [Memory model card](docs/memory-model-card.md)
+
+## Navigation experiment, actually run
 
 We compare a common small tanh network under behavioral cloning (BC), PPO, and
 BC → PPO. Demonstrations contain 1,290 state/action pairs from 256 BFS expert
@@ -113,7 +144,14 @@ uv run python -m scripts.overlap_audit
 uv run python -m critterlab.audit
 ```
 
-`--publish` enforces protocol-v1 budgets and seeds and exports **seed 0 final**
+To reproduce the separate memory experiment:
+
+```sh
+uv run python -m critterlab.memory_train --publish
+uv run python -m critterlab.memory_audit
+```
+
+Navigation `--publish` enforces protocol-v1 budgets and seeds and exports **seed 0 final**
 actors, not whichever seed looks best. Platform-dependent numeric differences
 are possible; the original environment, package versions, source hashes, and
 per-seed results are recorded. For a short training smoke run that doesn't
@@ -128,12 +166,15 @@ uv run python -m critterlab.train --steps 2048 --seeds 0 --output /tmp/critterla
 ```sh
 uv run pytest -q
 uv run python -m critterlab.audit
+uv run python -m critterlab.memory_audit
 npm run check
 ```
 
 Checks cover hand-worked world rules, actual weight updates, Python/TypeScript
 world parity, PyTorch/browser policy probabilities, and replaying **7,168**
-published evaluation episodes to recompute metrics. CI also regenerates the
+published navigation episodes and **432** memory episodes to recompute metrics
+and neural actions. Memory checks cover cue isolation, geometry separation
+and carried GRU state parity. CI also regenerates the
 world-overlap audit and checks that the committed results are unchanged.
 
 ## Architecture
@@ -163,33 +204,37 @@ flowchart LR
 | `critterlab/audit.py` | Reproduce outcomes from recorded actions |
 | `web/engine.ts` | Matching world and dense/tanh inference in the browser |
 | `web/learn.ts` | Real browser-side supervised weight updates |
+| `critterlab/memory_*.py` | Cue environment, sequence training and independent audit |
+| `web/memory.ts`, `web/memory-ui.ts` | Matching recurrent inference and playable memory grove |
 | `web/pet.ts` | Companion rules, grounded command vocabulary and save validation |
-| `checkpoints/` | All 12 final PyTorch actor state dictionaries |
-| `public/models/` | Four portable seed-0 policies |
+| `checkpoints/` | All 12 navigation and six memory PyTorch state dictionaries |
+| `public/models/` | Four navigation and two memory seed-0 policies |
 | `results/` | Raw evaluation episodes, training map seeds and overlap audits |
-| `failure-cases/` | Three reproducible failures of learned policies |
+| `failure-cases/` | Reproducible failures of learned policies |
 
-## What v0.2 does and does not establish
+## What v0.3 does and does not establish
 
-Pip is a reactive agent observing nearby tiles and the known goal direction. It
-has no language model, recurrent neural memory, or global-map planner. The app
-persists a companion diary and adapted weights; neither makes the actor recurrent.
-A small model
+The original garden actor is reactive, observing nearby tiles and the known
+goal direction. The separate memory-grove GRU carries recurrent state within
+trials. Neither actor is a language model or global-map planner. The app's
+persisted companion diary and adapted garden weights are separate from the
+GRU's short-term hidden state. A small model
 can learn useful behavior and still loop at a rock or oscillate between tiles.
 The demonstration solver has access to information the actor does not have;
 some expert decisions are therefore impossible to reconstruct from one local
 observation. The environment supplies dense Manhattan-distance shaping.
 
-Useful next experiments include a recurrent policy for ambiguous observations,
-a sparse-reward condition, controlled human-demonstration studies, and a
-world-disjoint split fixed before training. These are future work, not shipped
-results. Browser teaching is an exploratory interaction, independent of the
+The new experiment demonstrates learned cue memory in a constrained task;
+it does not fix navigation loops in random terrain or establish conversational
+understanding. Useful next experiments include recurrent random-garden
+navigation, sparse rewards and controlled human-demonstration studies.
+Browser teaching is an exploratory interaction, independent of the
 reported offline experiment.
 
 ## Attribution
 
-MIT licensed. Original procedural creature/terrain artwork and project code,
-developed with AI assistance. Established algorithms are credited in
+MIT licensed. Original procedural creature/terrain artwork and project code.
+Established algorithms are credited in
 [references](docs/references.md); PyTorch, NumPy and Vite are dependencies. No
 external game assets, MiniGrid implementation, or third-party repository code
 is bundled.

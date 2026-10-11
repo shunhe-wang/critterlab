@@ -1,6 +1,7 @@
 import './style.css';
 import { ACTIONS, SIZE, LIMIT, World, generate, route, cloneGarden, probabilities, type Policy } from './engine';
 import { teach, type Lesson } from './learn';
+import { mountMemoryLab } from './memory-ui';
 import { SAVE_KEY, MAX_BACKUP_BYTES, newPet, advance, care, adventure, remember, mood, stage, intent, chat, decodeSave, type Save, type Care } from './pet';
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id)! as T;
@@ -14,6 +15,8 @@ let policies: Record<string, Policy> = {};
 let history = [{ pos: world.pos, steps: 0, outcome: 'running' }];
 let episodeActions: number[] = [], demonstration: Lesson[] = [], lessons: Lesson[] = [];
 let animationTimer: ReturnType<typeof setInterval> | undefined;
+let lessonGeneration = 0;
+let memoryLab: ReturnType<typeof mountMemoryLab> | undefined;
 let pet = newPet(Date.now()), saved: Save | undefined, storageBroken = false, training = false;
 let lastStorage: string | null = null;
 try { lastStorage = localStorage.getItem(SAVE_KEY); if (lastStorage) saved = decodeSave(lastStorage); }
@@ -28,6 +31,8 @@ const notes: Record<string, string> = {
 };
 
 function restoreSession(record: Save) {
+  memoryLab?.pause();
+  lessonGeneration++;
   pet = advance(record.pet, Date.now()); garden = cloneGarden(record.garden); mode = record.mode;
   episodeActions = [...record.actions]; demonstration = record.demonstration; lessons = record.lessons;
   if (record.personal) policies.personal = record.personal; else delete policies.personal;
@@ -98,7 +103,7 @@ function say(message: string) { pet = chat(pet, 'pet', message); renderPet(); sa
 function wake() { pet = { ...advance(pet, Date.now()), sleepUntil: 0 }; }
 function doCare(kind: Care) {
   if (kind === 'nap' && pet.sleepUntil > Date.now()) { wake(); say('Stretch… ready when you are.'); return; }
-  if (kind === 'nap') stop();
+  if (kind === 'nap') { stop(); memoryLab?.pause(); }
   const result = care(pet, kind, Date.now()); pet = result.pet;
   el('care-message').textContent = result.message; say(result.message);
 }
@@ -208,6 +213,7 @@ function draw(time = 0) {
 
 function stop() { running = false; if (animationTimer) clearInterval(animationTimer); animationTimer = undefined; runButton.textContent = `▶ Let ${pet.name} explore`; }
 function reset() {
+  lessonGeneration++;
   stop(); world = new World(cloneGarden(garden)); history = [{ pos: world.pos, steps: 0, outcome: 'running' }];
   frame = 0; episodeActions = []; demonstration = []; el('teach').classList.add('hidden'); el('teach-note').textContent = ''; update();
 }
@@ -220,6 +226,11 @@ function update(persist = true) {
   el('brain-note').textContent = notes[brain.value];
   timeline.max = String(history.length - 1); timeline.value = String(frame); el('frame-label').textContent = `${frame} / ${history.length - 1}`;
   el('journal-message').textContent = frame ? `${ACTIONS[episodeActions[frame - 1]]}. ${shown.outcome === 'running' ? 'One step at a time.' : shown.outcome === 'success' ? 'The berry is yours.' : 'This is where things got interesting.'}` : 'Every little step leaves a trace.';
+  const positions = history.slice(0, frame + 1).map(step => step.pos);
+  const recent = positions.slice(-6);
+  const cycling = recent.length === 6 && recent.every((pos, i) => pos === recent[i % 2]);
+  el('loop-warning').classList.toggle('hidden', !cycling);
+  el('loop-warning').textContent = cycling ? `Repeating ${recent[0] === recent[1] ? 'the same tile' : 'two tiles'}. This reactive brain has no visit memory. Try another brain or teach a route. The run still uses its actual policy.` : '';
   if (policies[brain.value]) {
     const current = new World(cloneGarden(garden)); current.pos = shown.pos;
     const ps = probabilities(policies[brain.value], current.obs()), chosen = ps.indexOf(Math.max(...ps));
@@ -263,6 +274,7 @@ brain.onchange = () => { reset(); runButton.disabled = mode !== 'watch' || !poli
 runButton.onclick = () => {
   if (!policies[brain.value] || mode !== 'watch') return;
   if (running) { stop(); return; }
+  memoryLab?.pause();
   wake();
   if (world.done || frame !== history.length - 1) reset();
   running = true; runButton.textContent = 'Ⅱ Pause exploring';
@@ -270,16 +282,21 @@ runButton.onclick = () => {
 };
 el('new-garden').onclick = () => {
   const input = el<HTMLInputElement>('seed'); let seed = Number(input.value);
-  if (!Number.isInteger(seed) || seed < 0 || seed > 4294967295) { input.value = String(garden.seed); return; }
+  if (!input.value || !Number.isInteger(seed) || seed < 0 || seed > 4294967295) { input.value = String(garden.seed); return; }
   if (seed === garden.seed) { seed = (seed + 1) >>> 0; input.value = String(seed); }
   garden = generate(seed, el<HTMLInputElement>('shifted').checked); el('map-warning').textContent = ''; reset();
 };
-el<HTMLInputElement>('shifted').onchange = () => { garden = generate(Number(el<HTMLInputElement>('seed').value) >>> 0, el<HTMLInputElement>('shifted').checked); reset(); };
+el<HTMLInputElement>('shifted').onchange = () => {
+  const input = el<HTMLInputElement>('seed'); let seed = Number(input.value);
+  if (!input.value || !Number.isInteger(seed) || seed < 0 || seed > 4294967295) seed = garden.seed;
+  input.value = String(seed); garden = generate(seed, el<HTMLInputElement>('shifted').checked); reset();
+};
 timeline.oninput = () => { stop(); frame = Number(timeline.value); update(); };
 canvas.onclick = event => { const rect = canvas.getBoundingClientRect(); const x = Math.floor(((event.clientX - rect.left) * 700 / rect.width - 84) / 76), y = Math.floor(((event.clientY - rect.top) * 700 / rect.height - 70) / 76); if (x >= 0 && x < 7 && y >= 0 && y < 7) { if (mode === 'edit') paint(y * 7 + x); else if (y * 7 + x === history[frame].pos) doCare('cuddle'); } };
 el('paint-selected').onclick = () => paint(Number(el<HTMLSelectElement>('tile-index').value));
 el('tile-index').innerHTML = Array.from({ length: 25 }, (_, i) => { const x = i % 5 + 1, y = Math.floor(i / 5) + 1; return `<option value="${y * 7 + x}">Tile ${x}, ${y}</option>`; }).join('');
 document.addEventListener('keydown', event => {
+  if ((event.target as HTMLElement).closest('#memory-lab')) return;
   if (mode !== 'play' || ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes((event.target as HTMLElement).tagName)) return;
   const action = ({ ArrowUp: 0, w: 0, ArrowRight: 1, d: 1, ArrowDown: 2, s: 2, ArrowLeft: 3, a: 3 } as Record<string, number>)[event.key];
   if (action !== undefined) { event.preventDefault(); act(action); }
@@ -288,8 +305,11 @@ el('teach').onclick = async () => {
   if (mode !== 'play' || world.outcome !== 'success' || !demonstration.length || !policies[brain.value]) return;
   const button = el<HTMLButtonElement>('teach'); button.disabled = true; training = true; button.textContent = 'Learning from your footsteps…';
   const nextLessons = [...lessons, ...demonstration].slice(-2400);
+  const generation = lessonGeneration;
   try {
-    policies.personal = await teach(policies[brain.value], nextLessons); lessons = nextLessons;
+    const learned = await teach(policies[brain.value], nextLessons);
+    if (generation !== lessonGeneration) { el('teach-note').textContent = 'The garden or brain changed while learning. That lesson was cancelled.'; return; }
+    policies.personal = learned; lessons = nextLessons;
     if (!Array.from(brain.options).some(o => o.value === 'personal')) brain.add(new Option('Your saved lessons', 'personal'));
     brain.value = 'personal'; demonstration = [];
     pet = remember(advance(pet, Date.now()), `Learned from your footsteps. ${lessons.length} demonstrated steps saved in my brain.`);
@@ -334,10 +354,16 @@ async function load() {
     const names = ['untrained', 'bc', 'ppo', 'bc-ppo'];
     const fetched = await Promise.all(names.map(async name => { const r = await fetch(`${import.meta.env.BASE_URL}models/${name}.json`); if (!r.ok) throw new Error('Model unavailable'); return r.json() as Promise<Policy>; }));
     policies = { ...policies, ...Object.fromEntries(names.map((name, i) => [name, fetched[i]])) }; renderMode(); update();
-    const response = await fetch(`${import.meta.env.BASE_URL}data/experiment.json`); if (!response.ok) throw new Error('Experiment unavailable'); showExperiment(await response.json());
   } catch { el('brain-note').textContent = 'The model files could not load. Refresh or run the local build from GitHub.'; }
+  try {
+    const response = await fetch(`${import.meta.env.BASE_URL}data/experiment.json`); if (!response.ok) throw new Error('Experiment unavailable'); showExperiment(await response.json());
+  } catch { el('result-caption').textContent = 'The measured results could not load. Read the field notes below or refresh to try again.'; }
 }
 void load();
+memoryLab = mountMemoryLab(critter, (task, outcome, method) => {
+  pet = remember(advance(pet, Date.now()), `Memory grove: ${task.cue === 0 ? 'blue' : 'gold'} clue, ${task.delay}-tick wait, ${method}. ${outcome === 'success' ? 'Found the right berry.' : outcome === 'wrong-berry' ? 'Chose the other berry.' : 'Got stuck.'}`);
+  update();
+}, () => { stop(); wake(); save(); });
 setInterval(() => { renderPet(); draw(); }, 5000);
 document.addEventListener('visibilitychange', () => { if (document.hidden) { stop(); renderPet(); save(); } });
 window.addEventListener('pagehide', () => { renderPet(); save(); });

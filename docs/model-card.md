@@ -1,5 +1,8 @@
 # Pip model card
 
+This card describes the original random-garden actors. The separate recurrent
+grove actor has its own [memory model card](memory-model-card.md).
+
 ## Architecture and use
 
 Actor: 20 inputs → 64 tanh → 64 tanh → 4 action logits, 5,764 learned
