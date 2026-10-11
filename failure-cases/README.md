@@ -33,6 +33,17 @@ no previous-action or visit memory: returning to the same state repeats the
 choice. The trained seed-0 actors also time out here, in a North/South cycle.
 The UI flags repeated tiles and leaves the network's behavior intact.
 
+The r1 random-garden GRU now reaches the berry in **10 moves** on this wilder
+patch for all three model seeds. Resetting its recurrent state every move brings
+back the 48-action timeout. This is a known diagnostic, excluded from the held-out
+aggregate. The new reactive seed-0 control also times out. Seed **1100001** still
+times out for all three trained architectures and every model seed.
+
+Across unseen gardens the GRU has fewer repeating-tile timeouts but more hazard
+failures and lower overall success. See the
+[complete recurrent navigation report](../docs/navigation-memory-results.md)
+for per-seed results and all outcomes on the current actor's loop cases.
+
 The current release exposes these failures instead of adding a hidden
 pathfinding fallback. The separate solver only supplies offline demonstrations
 and checks whether edited worlds have a safe route.

@@ -2,6 +2,10 @@
 
 This card describes the original random-garden actors. The separate recurrent
 grove actor has its own [memory model card](memory-model-card.md).
+The experimental random-garden GRU is documented in [r1 results](navigation-memory-results.md)
+and its [fixed protocol](navigation-memory-protocol.md). It uses the same 20
+observations with a 32-unit hidden state; overall success is lower despite
+fewer loop timeouts. Browser teaching supports the reactive garden actors.
 
 ## Architecture and use
 

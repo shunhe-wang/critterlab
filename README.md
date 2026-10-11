@@ -4,7 +4,7 @@
 
 **A small creature. A real neural network. A little world for learning.**
 
-[Play](https://shunhe-wang.github.io/critterlab/) · [Memory experiment](docs/memory-results.md) · [Navigation experiment](docs/results.md) · [Model cards](docs/model-card.md)
+[Play](https://shunhe-wang.github.io/critterlab/) · [Garden memory results](docs/navigation-memory-results.md) · [Clue memory results](docs/memory-results.md) · [Model cards](docs/model-card.md)
 
 [![Verification](https://github.com/shunhe-wang/critterlab/actions/workflows/ci.yml/badge.svg)](https://github.com/shunhe-wang/critterlab/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.12-547460)
@@ -26,6 +26,16 @@ take naps and build a little history together. The garden, current adventure,
 lessons and adapted neural weights autosave in your browser. Friendship stages
 unlock a scarf and a keepsake badge. Your pet never dies from time away.
 
+**New: memory in the normal gardens.** A trained 5,316-parameter GRU remembers
+its observation history. Watch the current brain, memory brain and memory-reset
+control on the same patch in the [loop lab](https://shunhe-wang.github.io/critterlab/#navigation-lab),
+or select it for your pet's own adventures. On seed 67 with wilder terrain, it
+finds the berry in 10 moves while the current seed-0 brain loops until timeout.
+Across unseen gardens it reduces loops but enters more brambles and succeeds
+less often. The current brain remains the default.
+
+![The same wilder garden: current brain loops, memory brain succeeds, and erased memory loops again](docs/navigation-demo.png)
+
 **New: the memory grove.** A flower gives a clue, then disappears. Can Pip
 remember which berry it meant? A trained 5,508-parameter GRU carries
 32 hidden units between actions. Compare it with a reactive actor trained on
@@ -35,8 +45,9 @@ the same examples and the frozen original brain, or try the clue yourself.
 
 ## What you can do
 
-- **Watch** four real checkpoints: untrained, demonstrations only, rewards only,
-  and demonstrations followed by reward learning.
+- **Watch** six real garden checkpoints: untrained, demonstrations only, rewards only,
+  demonstrations followed by reward learning, a recurrent brain and its retrained
+  reactive control.
 - **Play** with arrow keys, WASD, or touch controls.
 - **Raise** a named companion with time-based needs, cosmetic growth and a
   persistent adventure diary. Care has cooldowns; friendship isn't a neural score.
@@ -56,6 +67,10 @@ the same examples and the frozen original brain, or try the clue yourself.
 - **Experiment with memory** in the [playable grove](https://shunhe-wang.github.io/critterlab/#memory-lab):
   vary the delay, erase the clue, reset recurrent state, inspect live activations,
   and download a trial. Finished trials join your pet's diary.
+- **Compare navigation** in the [loop lab](https://shunhe-wang.github.io/critterlab/#navigation-lab):
+  replay three brains on the same garden, reproduce seed 67, and inspect the
+  recurrent state in the main garden. Saved adventures rebuild memory from their
+  actual action history. Browser teaching currently supports reactive brains.
 
 Browser inference and teaching require no account, API key, inference server,
 or paid service. Optional Google Fonts have system-font fallbacks. There is no
@@ -66,7 +81,35 @@ clearing site data removes the pet, so download a backup. Another tab's saved
 changes pause and refresh this tab. [Companion rules and save contract](docs/pet-contract.md)
 describe away-time limits, care rewards and the dialogue boundary.
 
-## Memory experiment, actually run
+## Random-garden memory experiment, actually run
+
+The original garden and 20 observation features stay unchanged. A GRU and a
+new reactive actor receive the same 256 expert sequences, 180 BC updates and
+65,536 PPO interactions per model seed. All three seeds and the final seed-0
+demo export were fixed before training. Test worlds are exactly disjoint from
+both old and new training worlds.
+
+| Actor | Standard success | Standard loop timeout | Wilder success | Wilder loop timeout |
+|---|---:|---:|---:|---:|
+| Current BC → PPO | **87.0 ± 1.6%** | 13.0 ± 1.6% | 74.5 ± 1.2% | 25.5 ± 1.2% |
+| Memory GRU | 77.9 ± 2.3% | **7.9 ± 0.5%** | 68.5 ± 1.6% | **16.4 ± 0.7%** |
+| Retrained reactive | 88.7 ± 0.0% | 11.3 ± 0.0% | **77.0 ± 1.8%** | 23.0 ± 1.8% |
+| GRU, reset every move | 26.7 ± 2.2% | 68.0 ± 2.1% | 19.8 ± 1.8% | 77.1 ± 2.9% |
+
+Mean ± sample standard deviation across three model seeds; 256 unique gardens
+per split. Loop timeout means the final six positions repeat one or two tiles
+at the 48-action limit. The GRU reaches brambles in 12.1% of standard cases;
+both reactive actors reach none. Fewer loops do not establish a better brain.
+The frozen current actor has a different historical training regimen; the newly
+trained reactive actor is the matched control. Equal updates and interactions
+do not mean equal compute. Seed 67 is a known diagnostic, excluded from these
+scores. Another known loop, seed 1100001, remains unsolved by every trained actor.
+
+[Full report, paired loop recoveries and limitations](docs/navigation-memory-results.md) ·
+[Predeclared protocol](docs/navigation-memory-protocol.md) ·
+[All recorded episodes](results/navigation-r1.json)
+
+## Clue-memory experiment, actually run
 
 Two new architectures trained on the same 36 expert sequences (330 transitions)
 for 200 Adam updates, with three paired seeds. The protocol and seed-0 demo
@@ -151,6 +194,13 @@ uv run python -m critterlab.memory_train --publish
 uv run python -m critterlab.memory_audit
 ```
 
+To reproduce recurrent navigation in the normal gardens:
+
+```sh
+uv run python -m critterlab.navigation_train --publish
+uv run python -m critterlab.navigation_audit
+```
+
 Navigation `--publish` enforces protocol-v1 budgets and seeds and exports **seed 0 final**
 actors, not whichever seed looks best. Platform-dependent numeric differences
 are possible; the original environment, package versions, source hashes, and
@@ -167,14 +217,17 @@ uv run python -m critterlab.train --steps 2048 --seeds 0 --output /tmp/critterla
 uv run pytest -q
 uv run python -m critterlab.audit
 uv run python -m critterlab.memory_audit
+uv run python -m critterlab.navigation_audit
 npm run check
 ```
 
 Checks cover hand-worked world rules, actual weight updates, Python/TypeScript
 world parity, PyTorch/browser policy probabilities, and replaying **7,168**
 published navigation episodes and **432** memory episodes to recompute metrics
-and neural actions. Memory checks cover cue isolation, geometry separation
-and carried GRU state parity. CI also regenerates the
+and neural actions. The new navigation audit independently replays **6,192**
+episodes, rebuilding whole observation prefixes to check carried-state inference.
+Memory checks cover cue isolation, geometry separation, terminal state resets,
+PPO sequence boundaries and PyTorch/browser GRU parity. CI also regenerates the
 world-overlap audit and checks that the committed results are unchanged.
 
 ## Architecture
@@ -206,17 +259,19 @@ flowchart LR
 | `web/learn.ts` | Real browser-side supervised weight updates |
 | `critterlab/memory_*.py` | Cue environment, sequence training and independent audit |
 | `web/memory.ts`, `web/memory-ui.ts` | Matching recurrent inference and playable memory grove |
+| `critterlab/navigation_*.py` | Disjoint garden splits, sequence BC, recurrent PPO and independent audit |
+| `web/navigation.ts`, `web/navigation-ui.ts` | Garden GRU inference, replay reconstruction and three-way comparison |
 | `web/pet.ts` | Companion rules, grounded command vocabulary and save validation |
-| `checkpoints/` | All 12 navigation and six memory PyTorch state dictionaries |
-| `public/models/` | Four navigation and two memory seed-0 policies |
+| `checkpoints/` | All 12 original navigation, six cue-memory and six new navigation PyTorch state dictionaries |
+| `public/models/` | Six garden and two cue-memory seed-0 policies |
 | `results/` | Raw evaluation episodes, training map seeds and overlap audits |
 | `failure-cases/` | Reproducible failures of learned policies |
 
-## What v0.3 does and does not establish
+## What v0.4 does and does not establish
 
 The original garden actor is reactive, observing nearby tiles and the known
-goal direction. The separate memory-grove GRU carries recurrent state within
-trials. Neither actor is a language model or global-map planner. The app's
+goal direction. The new garden GRU and separate memory-grove GRU carry recurrent
+state within episodes. None is a language model or global-map planner. The app's
 persisted companion diary and adapted garden weights are separate from the
 GRU's short-term hidden state. A small model
 can learn useful behavior and still loop at a rock or oscillate between tiles.
@@ -224,10 +279,11 @@ The demonstration solver has access to information the actor does not have;
 some expert decisions are therefore impossible to reconstruct from one local
 observation. The environment supplies dense Manhattan-distance shaping.
 
-The new experiment demonstrates learned cue memory in a constrained task;
-it does not fix navigation loops in random terrain or establish conversational
-understanding. Useful next experiments include recurrent random-garden
-navigation, sparse rewards and controlled human-demonstration studies.
+The clue experiment demonstrates learned memory in a constrained task. The
+random-garden experiment resolves some cycles, including the reported seed 67,
+while exposing a hazard/success tradeoff. Neither establishes conversational
+understanding or superior general navigation. Useful next experiments include
+hazard-sensitive training, sparse rewards and controlled human-demonstration studies.
 Browser teaching is an exploratory interaction, independent of the
 reported offline experiment.
 

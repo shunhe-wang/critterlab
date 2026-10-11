@@ -17,6 +17,7 @@ export interface Save {
   version: 1; pet: Pet; garden: Garden; shifted: boolean; brain: string;
   mode: 'watch' | 'play' | 'edit'; actions: number[]; demonstration: Lesson[];
   lessons: Lesson[]; personal?: Policy;
+  resetMemory?: boolean;
 }
 export function newPet(now: number): Pet {
   return { name: 'Pip', born: now, clock: now, fullness: 80, energy: 85, affection: 70,
@@ -145,6 +146,6 @@ export function decodeSave(text: string): Save {
   });
   if (demonstration.length && demonstration.length !== actions.length) throw new Error('Incomplete demonstration');
   const personal = v.personal === undefined ? undefined : policy(v.personal);
-  if (!['watch', 'play', 'edit'].includes(String(v.mode)) || !['bc-ppo', 'bc', 'ppo', 'untrained', 'personal'].includes(String(v.brain)) || (v.brain === 'personal' && !personal) || typeof v.shifted !== 'boolean') throw new Error('Invalid session');
-  return { version: 1, pet, garden, shifted: v.shifted, brain: v.brain as string, mode: v.mode as Save['mode'], actions, demonstration, lessons: array(v.lessons, 2400).map(lesson), ...(personal ? { personal } : {}) };
+  if (!['watch', 'play', 'edit'].includes(String(v.mode)) || !['bc-ppo', 'bc', 'ppo', 'untrained', 'personal', 'r1-gru', 'r1-reactive'].includes(String(v.brain)) || (v.brain === 'personal' && !personal) || typeof v.shifted !== 'boolean' || (v.resetMemory !== undefined && typeof v.resetMemory !== 'boolean')) throw new Error('Invalid session');
+  return { version: 1, pet, garden, shifted: v.shifted, brain: v.brain as string, mode: v.mode as Save['mode'], actions, demonstration, lessons: array(v.lessons, 2400).map(lesson), ...(personal ? { personal } : {}), ...(v.resetMemory === undefined ? {} : {resetMemory:v.resetMemory as boolean}) };
 }

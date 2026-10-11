@@ -1,7 +1,9 @@
 import './style.css';
-import { ACTIONS, SIZE, LIMIT, World, generate, route, cloneGarden, probabilities, type Policy } from './engine';
+import { ACTIONS, SIZE, LIMIT, World, generate, route, cloneGarden, type Policy } from './engine';
 import { teach, type Lesson } from './learn';
 import { mountMemoryLab } from './memory-ui';
+import { inspectGarden, isRecurrent, type GardenPolicy } from './navigation';
+import { mountNavigationComparison } from './navigation-ui';
 import { SAVE_KEY, MAX_BACKUP_BYTES, newPet, advance, care, adventure, remember, mood, stage, intent, chat, decodeSave, type Save, type Care } from './pet';
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id)! as T;
@@ -11,12 +13,13 @@ const brain = el<HTMLSelectElement>('brain'), timeline = el<HTMLInputElement>('t
 const runButton = el<HTMLButtonElement>('run');
 let garden = generate(42), world = new World(cloneGarden(garden));
 let mode = 'watch', tile = 1, running = false, frame = 0;
-let policies: Record<string, Policy> = {};
+let policies: Record<string, GardenPolicy> = {};
 let history = [{ pos: world.pos, steps: 0, outcome: 'running' }];
 let episodeActions: number[] = [], demonstration: Lesson[] = [], lessons: Lesson[] = [];
 let animationTimer: ReturnType<typeof setInterval> | undefined;
 let lessonGeneration = 0;
 let memoryLab: ReturnType<typeof mountMemoryLab> | undefined;
+let navigationLab: ReturnType<typeof mountNavigationComparison> | undefined;
 let pet = newPet(Date.now()), saved: Save | undefined, storageBroken = false, training = false;
 let lastStorage: string | null = null;
 try { lastStorage = localStorage.getItem(SAVE_KEY); if (lastStorage) saved = decodeSave(lastStorage); }
@@ -27,11 +30,14 @@ const notes: Record<string, string> = {
   'ppo': '65,536 steps of exploring and learning from rewards. No demonstrations.',
   'bc': 'Learned to imitate 256 expert routes. No reward-based fine-tuning.',
   'untrained': 'The same network before training. Curiosity without experience.',
-  'personal': 'Your saved neural weights, updated from your routes. A familiar route can overfit.'
+  'personal': 'Your saved neural weights, updated from your routes. A familiar route can overfit.',
+  'r1-gru': 'Experimental recurrent brain. Escapes some loops, but enters more brambles and scores lower overall. Watch its actual memory below.',
+  'r1-reactive': 'Reactive control retrained with the memory brain’s training regimen. No recurrent state.'
 };
 
 function restoreSession(record: Save) {
   memoryLab?.pause();
+  navigationLab?.pause();
   lessonGeneration++;
   pet = advance(record.pet, Date.now()); garden = cloneGarden(record.garden); mode = record.mode;
   episodeActions = [...record.actions]; demonstration = record.demonstration; lessons = record.lessons;
@@ -43,12 +49,14 @@ function restoreSession(record: Save) {
   for (const action of episodeActions) { world.step(action); history.push({ pos: world.pos, steps: world.steps, outcome: world.outcome }); }
   frame = history.length - 1;
   el<HTMLInputElement>('seed').value = String(garden.seed); el<HTMLInputElement>('shifted').checked = record.shifted;
+  el<HTMLInputElement>('garden-forget').checked = record.resetMemory ?? false;
   renderMode();
+  navigationLab?.refresh();
   el('teach').classList.toggle('hidden', mode !== 'play' || world.outcome !== 'success' || !demonstration.length);
 }
 function snapshot(): Save {
   return { version: 1, pet, garden, shifted: el<HTMLInputElement>('shifted').checked, brain: brain.value,
-    mode: mode as Save['mode'], actions: episodeActions, demonstration, lessons, ...(policies.personal ? { personal: policies.personal } : {}) };
+    mode: mode as Save['mode'], actions: episodeActions, demonstration, lessons, resetMemory: el<HTMLInputElement>('garden-forget').checked, ...(policies.personal ? { personal: policies.personal as Policy } : {}) };
 }
 function save(): boolean {
   if (storageBroken) { el('save-status').textContent = 'Previous save unreadable · this pet is temporary'; return false; }
@@ -103,7 +111,7 @@ function say(message: string) { pet = chat(pet, 'pet', message); renderPet(); sa
 function wake() { pet = { ...advance(pet, Date.now()), sleepUntil: 0 }; }
 function doCare(kind: Care) {
   if (kind === 'nap' && pet.sleepUntil > Date.now()) { wake(); say('Stretch… ready when you are.'); return; }
-  if (kind === 'nap') { stop(); memoryLab?.pause(); }
+  if (kind === 'nap') { stop(); memoryLab?.pause(); navigationLab?.pause(); }
   const result = care(pet, kind, Date.now()); pet = result.pet;
   el('care-message').textContent = result.message; say(result.message);
 }
@@ -216,6 +224,7 @@ function reset() {
   lessonGeneration++;
   stop(); world = new World(cloneGarden(garden)); history = [{ pos: world.pos, steps: 0, outcome: 'running' }];
   frame = 0; episodeActions = []; demonstration = []; el('teach').classList.add('hidden'); el('teach-note').textContent = ''; update();
+  navigationLab?.refresh();
 }
 function update(persist = true) {
   renderPet(); if (persist && save()) return;
@@ -230,16 +239,31 @@ function update(persist = true) {
   const recent = positions.slice(-6);
   const cycling = recent.length === 6 && recent.every((pos, i) => pos === recent[i % 2]);
   el('loop-warning').classList.toggle('hidden', !cycling);
-  el('loop-warning').textContent = cycling ? `Repeating ${recent[0] === recent[1] ? 'the same tile' : 'two tiles'}. This reactive brain has no visit memory. Try another brain or teach a route. The run still uses its actual policy.` : '';
+  const recurrent = !!policies[brain.value] && isRecurrent(policies[brain.value]);
+  el('loop-warning').textContent = cycling ? `Repeating ${recent[0] === recent[1] ? 'the same tile' : 'two tiles'}. ${recurrent ? 'The memory brain can still get stuck. Its hidden state may change later decisions.' : 'This reactive brain has no visit memory. Try the memory brain or teach a route.'} The run still uses its actual policy.` : '';
+  el('garden-memory').classList.toggle('hidden', !recurrent);
+  el('teach').classList.toggle('hidden', mode !== 'play' || world.outcome !== 'success' || !demonstration.length || recurrent);
+  if (mode === 'play' && world.outcome === 'success' && recurrent) el('teach-note').textContent = 'This recurrent brain is trained offline. Choose a reactive brain for browser teaching.';
   if (policies[brain.value]) {
-    const current = new World(cloneGarden(garden)); current.pos = shown.pos;
-    const ps = probabilities(policies[brain.value], current.obs()), chosen = ps.indexOf(Math.max(...ps));
+    const inspected = inspectGarden(policies[brain.value], garden, episodeActions, frame, el<HTMLInputElement>('garden-forget').checked);
+    const ps = inspected.probabilities, chosen = ps.indexOf(Math.max(...ps));
     el('probabilities').innerHTML = ps.map((p, i) => `<div class="prob-column ${i === chosen ? 'selected' : ''}"><strong>${Math.round(p * 100)}%</strong><div class="bar-track"><div class="bar-fill" style="height:${p * 100}%"></div></div>${ACTIONS[i]}</div>`).join('');
+    if (recurrent) {
+      el('garden-state').replaceChildren(...(inspected.hidden ?? Array<number>(32).fill(0)).map((value,i)=>{
+        const unit = document.createElement('span'); unit.style.background = value>=0 ? `rgba(84,124,153,${.12+Math.abs(value)*.85})` : `rgba(185,140,90,${.12+Math.abs(value)*.85})`;
+        unit.title = `Unit ${i+1}: ${value.toFixed(4)}`; unit.setAttribute('aria-label',unit.title); return unit;
+      }));
+    }
   }
   draw();
 }
-function act(action: number) {
+function act(action?: number) {
   if (world.done || frame !== history.length - 1) return;
+  if (action === undefined) {
+    if (!policies[brain.value]) return;
+    const ps = inspectGarden(policies[brain.value],garden,episodeActions,frame,el<HTMLInputElement>('garden-forget').checked).probabilities;
+    action = ps.indexOf(Math.max(...ps));
+  }
   if (pet.sleepUntil > pet.clock) wake();
   if (mode === 'play') demonstration.push({ observation: world.obs(), action });
   world.step(action); episodeActions.push(action); history.push({ pos: world.pos, steps: world.steps, outcome: world.outcome }); frame = history.length - 1;
@@ -275,11 +299,13 @@ runButton.onclick = () => {
   if (!policies[brain.value] || mode !== 'watch') return;
   if (running) { stop(); return; }
   memoryLab?.pause();
+  navigationLab?.pause();
   wake();
   if (world.done || frame !== history.length - 1) reset();
   running = true; runButton.textContent = 'Ⅱ Pause exploring';
-  animationTimer = setInterval(() => { const ps = probabilities(policies[brain.value], world.obs()); act(ps.indexOf(Math.max(...ps))); }, 350);
+  animationTimer = setInterval(() => act(), 350);
 };
+el<HTMLInputElement>('garden-forget').onchange = reset;
 el('new-garden').onclick = () => {
   const input = el<HTMLInputElement>('seed'); let seed = Number(input.value);
   if (!input.value || !Number.isInteger(seed) || seed < 0 || seed > 4294967295) { input.value = String(garden.seed); return; }
@@ -303,11 +329,12 @@ document.addEventListener('keydown', event => {
 });
 el('teach').onclick = async () => {
   if (mode !== 'play' || world.outcome !== 'success' || !demonstration.length || !policies[brain.value]) return;
+  const source = policies[brain.value]; if (isRecurrent(source)) return;
   const button = el<HTMLButtonElement>('teach'); button.disabled = true; training = true; button.textContent = 'Learning from your footsteps…';
   const nextLessons = [...lessons, ...demonstration].slice(-2400);
   const generation = lessonGeneration;
   try {
-    const learned = await teach(policies[brain.value], nextLessons);
+    const learned = await teach(source, nextLessons);
     if (generation !== lessonGeneration) { el('teach-note').textContent = 'The garden or brain changed while learning. That lesson was cancelled.'; return; }
     policies.personal = learned; lessons = nextLessons;
     if (!Array.from(brain.options).some(o => o.value === 'personal')) brain.add(new Option('Your saved lessons', 'personal'));
@@ -319,7 +346,7 @@ el('teach').onclick = async () => {
   finally { training = false; button.disabled = false; button.textContent = 'Teach this route ✳'; save(); }
 };
 el('download').onclick = () => {
-  const record = { version: 1, garden, policy: brain.value, policy_weights: policies[brain.value], actions: episodeActions, frames: history, teaching_actions: lessons.length };
+  const record = { version: 1, garden, policy: brain.value, policy_weights: policies[brain.value], reset_memory:el<HTMLInputElement>('garden-forget').checked, actions: episodeActions, frames: history, teaching_actions: lessons.length };
   downloadJSON(record, `critterlab-${garden.seed}.json`);
 };
 
@@ -351,9 +378,10 @@ function showExperiment(data: Experiment) {
 renderMode(); runButton.disabled = true; stop(); update();
 async function load() {
   try {
-    const names = ['untrained', 'bc', 'ppo', 'bc-ppo'];
-    const fetched = await Promise.all(names.map(async name => { const r = await fetch(`${import.meta.env.BASE_URL}models/${name}.json`); if (!r.ok) throw new Error('Model unavailable'); return r.json() as Promise<Policy>; }));
+    const names = ['untrained', 'bc', 'ppo', 'bc-ppo', 'r1-gru', 'r1-reactive'];
+    const fetched = await Promise.all(names.map(async name => { const r = await fetch(`${import.meta.env.BASE_URL}models/${name}.json`); if (!r.ok) throw new Error('Model unavailable'); return r.json() as Promise<GardenPolicy>; }));
     policies = { ...policies, ...Object.fromEntries(names.map((name, i) => [name, fetched[i]])) }; renderMode(); update();
+    navigationLab?.refresh();
   } catch { el('brain-note').textContent = 'The model files could not load. Refresh or run the local build from GitHub.'; }
   try {
     const response = await fetch(`${import.meta.env.BASE_URL}data/experiment.json`); if (!response.ok) throw new Error('Experiment unavailable'); showExperiment(await response.json());
@@ -363,7 +391,10 @@ void load();
 memoryLab = mountMemoryLab(critter, (task, outcome, method) => {
   pet = remember(advance(pet, Date.now()), `Memory grove: ${task.cue === 0 ? 'blue' : 'gold'} clue, ${task.delay}-tick wait, ${method}. ${outcome === 'success' ? 'Found the right berry.' : outcome === 'wrong-berry' ? 'Chose the other berry.' : 'Got stuck.'}`);
   update();
-}, () => { stop(); wake(); save(); });
+}, () => { stop(); navigationLab?.pause(); wake(); save(); });
+navigationLab = mountNavigationComparison(critter, () => cloneGarden(garden), () => policies, () => { stop(); memoryLab?.pause(); wake(); save(); }, () => {
+  garden = generate(67,true); el<HTMLInputElement>('seed').value='67'; el<HTMLInputElement>('shifted').checked=true; reset();
+});
 setInterval(() => { renderPet(); draw(); }, 5000);
 document.addEventListener('visibilitychange', () => { if (document.hidden) { stop(); renderPet(); save(); } });
 window.addEventListener('pagehide', () => { renderPet(); save(); });

@@ -28,6 +28,12 @@ and teaching use the actual neural policy. Pet needs are not network inputs.
 One versioned browser-local save contains the pet, up to 80 memories, 24 chat
 messages, the garden, the current episode, up to 2,400 teaching actions and the
 adapted neural weights. Returning resumes the episode in a paused state.
+The selected r1 recurrent brain and optional reset-memory control are also saved.
+Its hidden state is reconstructed from the saved garden and actual action prefix
+using the fixed r1 checkpoint. Scrubbing the journal reconstructs the state at
+that frame; later frames do not leak into earlier decisions. Browser teaching
+updates reactive actors only. Comparison replays use the same garden without
+awarding extra companion growth.
 JSON backups can move a pet between browsers. Clearing site data removes it.
 There is no account, server, background simulation or cross-device sync.
 
