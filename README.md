@@ -4,7 +4,7 @@
 
 **A small creature. A real neural network. A little world for learning.**
 
-[Play the garden](https://shunhe-wang.github.io/critterlab/) · [Experiment](docs/results.md) · [Protocol](docs/protocol.md) · [Model card](docs/model-card.md)
+[Play the garden](https://shunhe-wang.github.io/critterlab/) · [Research study](docs/research-results.md) · [Original experiment](docs/results.md) · [Model card](docs/model-card.md)
 
 [![Verification](https://github.com/shunhe-wang/critterlab/actions/workflows/ci.yml/badge.svg)](https://github.com/shunhe-wang/critterlab/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.12-547460)
@@ -56,7 +56,24 @@ clearing site data removes the pet, so download a backup. Another tab's saved
 changes pause and refresh this tab. [Companion rules and save contract](docs/pet-contract.md)
 describe away-time limits, care rewards and the dialogue boundary.
 
-## The experiment, actually run
+## Research investigation: imitation under distribution shift
+
+**When does source imitation help or hurt reinforcement-learning adaptation?**
+The follow-up study compares BC, PPO, BC→PPO, entropy controls, fixed/adaptive
+imitation, and a DAgger-style baseline across standard, dense and barrier maps.
+It fixes exact-world-disjoint pools before optimization and uses ten paired
+training seeds, matched interaction/update budgets, and paired uncertainty.
+Targeted ablations vary demonstration volume, label noise, reward shaping and
+network width. Every final actor and evaluation action sequence is available.
+
+[Read the findings and limitations](docs/research-results.md),
+[the protocol](docs/research-protocol.md), and
+[the primary-source background](docs/research-background.md).
+The adaptive rule is a tested heuristic using established ideas; a score alone
+does not establish algorithmic novelty. This study was developed with AI
+assistance and is separate from the original browser checkpoints.
+
+## The original experiment, actually run
 
 We compare a common small tanh network under behavioral cloning (BC), PPO, and
 BC → PPO. Demonstrations contain 1,290 state/action pairs from 256 BFS expert
@@ -122,6 +139,16 @@ replace release artifacts:
 ```sh
 uv run python -m critterlab.train --steps 2048 --seeds 0 --output /tmp/critterlab-smoke.json
 ```
+
+The follow-up study has a separate runner and replay audit:
+
+```sh
+uv run python -m critterlab.research --output research/reproduced.json.gz
+uv run python -m critterlab.research_audit research/reproduced.json.gz
+uv run python -m critterlab.research_report research/reproduced.json.gz --output /tmp/critterlab-report
+```
+
+[Artifact format and reproduction details](research/README.md).
 
 ## Verify
 

@@ -17,6 +17,9 @@ jobs:
       - run: uv sync --locked
       - run: uv run pytest -q
       - run: uv run python -m critterlab.audit
+      - run: uv run python -m critterlab.research_audit
+      - run: uv run python -m critterlab.research_report --output /tmp/critterlab-report
+      - run: cmp research/analysis.json /tmp/critterlab-report/analysis.json
       - run: uv run python -m scripts.overlap_audit
       - run: git diff --exit-code -- results/world-overlap.json results/disjoint-audit.json public/data/experiment.json
       - run: npm ci
