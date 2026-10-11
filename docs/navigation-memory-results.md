@@ -31,6 +31,8 @@ Success, mean ± sample standard deviation across initialization seeds 0/1/2:
 legacy training worlds, all new training and development worlds, and each
 other. World identity includes cells, start and goal. These fresh-split scores
 are not directly comparable to the older v1 table's different test cases.
+The exclusions cover v1 and r1 actors evaluated here; the separately published
+350-run imitation-under-shift study is outside this comparison.
 Standard deviations describe model-seed variation, not confidence intervals.
 
 Individual success percentages (seeds 0, 1, 2):

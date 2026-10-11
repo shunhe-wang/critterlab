@@ -49,7 +49,7 @@ export function mountNavigationComparison(drawPet:Painter,getGarden:()=>Garden,g
       const metrics=evidence!.summary[key][split];name.textContent=label;
       value.textContent=`${(metrics.success_rate.mean*100).toFixed(1)}% · ${(metrics.loop_timeout_rate.mean*100).toFixed(1)}%`;row.append(name,value);return row;
     }));
-    el('navigation-caption').textContent='The GRU reduces repeating-tile timeouts, but enters more brambles and has lower overall success. Mean across 3 model seeds; 256 unique gardens per split, excluded from all old/new training. Final seed 0 powers these replays; full variability is in the report.';
+    el('navigation-caption').textContent='The GRU reduces repeating-tile timeouts, but enters more brambles and has lower overall success. Mean across 3 model seeds; 256 unique gardens per split, excluded from v1/r1 training. Final seed 0 powers these replays; full variability is in the report.';
   }
   el('navigation-split').onchange=scores;
   document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();});

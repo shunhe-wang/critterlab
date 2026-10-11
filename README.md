@@ -4,15 +4,36 @@
 
 **A small creature. A real neural network. A little world for learning.**
 
-[Play](https://shunhe-wang.github.io/critterlab/) · [Garden memory results](docs/navigation-memory-results.md) · [Clue memory results](docs/memory-results.md) · [Model cards](docs/model-card.md)
+[Research report](docs/research-results.md) · [Play](https://shunhe-wang.github.io/critterlab/) · [Garden memory results](docs/navigation-memory-results.md) · [Clue memory results](docs/memory-results.md) · [Model cards](docs/model-card.md)
 
-[![Verification](https://github.com/shunhe-wang/critterlab/actions/workflows/ci.yml/badge.svg)](https://github.com/shunhe-wang/critterlab/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.12-547460)
 ![PyTorch](https://img.shields.io/badge/PyTorch-real_training-c88552)
 ![TypeScript](https://img.shields.io/badge/TypeScript-browser_inference-547460)
 ![License](https://img.shields.io/badge/license-MIT-8b937d)
 
 </div>
+
+## Research report: when does imitation help or hurt reinforcement learning?
+
+**[Read the findings, uncertainty and limitations →](docs/research-results.md)**
+
+The study uses **350 training runs and ten paired seeds** to compare BC, PPO,
+BC→PPO, exploration controls, fixed/adaptive imitation and a DAgger-style
+baseline across standard, dense and barrier maps. Exact-world-disjoint pools
+are fixed before optimization, with matched interaction/update budgets and
+targeted ablations of demonstration volume, label noise, reward shaping and
+network width. Every final actor and evaluation action sequence is available.
+
+The results show where imitation's advantage shrinks under shift, how greedy
+evaluation can hide PPO's sampled performance, and why the adaptive alternative
+does not establish an improvement over BC→PPO. The adaptive rule uses
+established ideas; this study does not claim a novel learning algorithm.
+This study is separate from the browser checkpoints.
+
+[Fixed protocol](docs/research-protocol.md) ·
+[Raw data and reproduction](research/README.md) ·
+[Failure analysis](docs/research-failures.md) ·
+[Primary-source background](docs/research-background.md)
 
 ![CritterLab's playable garden, neural policy inspector and episode journal](docs/demo.jpg)
 
@@ -87,7 +108,7 @@ The original garden and 20 observation features stay unchanged. A GRU and a
 new reactive actor receive the same 256 expert sequences, 180 BC updates and
 65,536 PPO interactions per model seed. All three seeds and the final seed-0
 demo export were fixed before training. Test worlds are exactly disjoint from
-both old and new training worlds.
+both v1 and r1 training worlds.
 
 | Actor | Standard success | Standard loop timeout | Wilder success | Wilder loop timeout |
 |---|---:|---:|---:|---:|
@@ -211,6 +232,16 @@ replace release artifacts:
 uv run python -m critterlab.train --steps 2048 --seeds 0 --output /tmp/critterlab-smoke.json
 ```
 
+The follow-up study has a separate runner and replay audit:
+
+```sh
+uv run python -m critterlab.research --output research/reproduced.json.gz
+uv run python -m critterlab.research_audit research/reproduced.json.gz
+uv run python -m critterlab.research_report research/reproduced.json.gz --output /tmp/critterlab-report
+```
+
+[Artifact format and reproduction details](research/README.md).
+
 ## Verify
 
 ```sh
@@ -227,8 +258,14 @@ published navigation episodes and **432** memory episodes to recompute metrics
 and neural actions. The new navigation audit independently replays **6,192**
 episodes, rebuilding whole observation prefixes to check carried-state inference.
 Memory checks cover cue isolation, geometry separation, terminal state resets,
-PPO sequence boundaries and PyTorch/browser GRU parity. CI also regenerates the
-world-overlap audit and checks that the committed results are unchanged.
+PPO sequence boundaries and PyTorch/browser GRU parity. The optional
+[manual verification workflow](.github/workflows/ci.yml) also replays the
+research results, regenerates their analysis and the world-overlap audit, and
+checks that the committed results are unchanged.
+
+GitHub Actions does **not** run automatically on pushes, PR updates or merges.
+Verification and Pages deployment are manual-only: open the relevant workflow
+in the repository's **Actions** tab and choose **Run workflow** when needed.
 
 ## Architecture
 
