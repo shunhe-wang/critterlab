@@ -1,0 +1,22 @@
+{
+  "name": "imitation-shift-v1",
+  "training_seeds": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+  "environment_steps": 65536,
+  "actor_update_budget": 1024,
+  "pretraining_updates": 128,
+  "training_worlds_per_family": 256,
+  "evaluation_worlds_per_family": 128,
+  "demonstration_worlds": 256,
+  "families": ["standard", "dense", "barrier"],
+  "methods": ["bc", "ppo", "ppo-short", "bc-ppo", "ppo-entropy", "bc-ppo-entropy", "fixed-imitation", "adaptive-imitation", "dagger"],
+  "ablations": [
+    {"name": "few-demos", "demo_worlds": 64},
+    {"name": "noisy-labels", "label_noise": 0.2},
+    {"name": "no-shaping", "shaping": 0.0},
+    {"name": "narrow-network", "width": 32}
+  ],
+  "ablation_family": "barrier",
+  "ablation_methods": ["ppo", "bc-ppo"],
+  "bootstrap_resamples": 10000,
+  "bootstrap_seed": 20261011
+}
