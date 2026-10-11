@@ -1,0 +1,21 @@
+[project]
+name = "critterlab"
+version = "0.1.0"
+description = "Teach a tiny neural agent. Inspect what it actually learned."
+requires-python = ">=3.12,<3.13"
+dependencies = ["torch==2.14.1", "numpy>=2.2,<3"]
+
+[dependency-groups]
+dev = ["pytest>=8,<10"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]

@@ -1,0 +1,154 @@
+[
+  {
+    "seed": 0,
+    "method": "untrained",
+    "unique_training_worlds": 0,
+    "exact_overlap": {
+      "held_out": [],
+      "shifted": []
+    }
+  },
+  {
+    "seed": 0,
+    "method": "bc",
+    "unique_training_worlds": 255,
+    "exact_overlap": {
+      "held_out": [],
+      "shifted": []
+    }
+  },
+  {
+    "seed": 0,
+    "method": "ppo",
+    "unique_training_worlds": 4459,
+    "exact_overlap": {
+      "held_out": [
+        1100040,
+        1100148,
+        1100185,
+        1100204
+      ],
+      "shifted": []
+    }
+  },
+  {
+    "seed": 0,
+    "method": "bc-ppo",
+    "unique_training_worlds": 8075,
+    "exact_overlap": {
+      "held_out": [
+        1100040,
+        1100075,
+        1100116,
+        1100123,
+        1100129,
+        1100148,
+        1100185,
+        1100204
+      ],
+      "shifted": [
+        2100037
+      ]
+    }
+  },
+  {
+    "seed": 1,
+    "method": "untrained",
+    "unique_training_worlds": 0,
+    "exact_overlap": {
+      "held_out": [],
+      "shifted": []
+    }
+  },
+  {
+    "seed": 1,
+    "method": "bc",
+    "unique_training_worlds": 255,
+    "exact_overlap": {
+      "held_out": [],
+      "shifted": []
+    }
+  },
+  {
+    "seed": 1,
+    "method": "ppo",
+    "unique_training_worlds": 4452,
+    "exact_overlap": {
+      "held_out": [
+        1100040,
+        1100046,
+        1100067,
+        1100116,
+        1100129,
+        1100204,
+        1100243
+      ],
+      "shifted": []
+    }
+  },
+  {
+    "seed": 1,
+    "method": "bc-ppo",
+    "unique_training_worlds": 8042,
+    "exact_overlap": {
+      "held_out": [
+        1100020,
+        1100040,
+        1100046,
+        1100067,
+        1100116,
+        1100129,
+        1100204,
+        1100243
+      ],
+      "shifted": []
+    }
+  },
+  {
+    "seed": 2,
+    "method": "untrained",
+    "unique_training_worlds": 0,
+    "exact_overlap": {
+      "held_out": [],
+      "shifted": []
+    }
+  },
+  {
+    "seed": 2,
+    "method": "bc",
+    "unique_training_worlds": 255,
+    "exact_overlap": {
+      "held_out": [],
+      "shifted": []
+    }
+  },
+  {
+    "seed": 2,
+    "method": "ppo",
+    "unique_training_worlds": 4382,
+    "exact_overlap": {
+      "held_out": [
+        1100020,
+        1100040,
+        1100046
+      ],
+      "shifted": []
+    }
+  },
+  {
+    "seed": 2,
+    "method": "bc-ppo",
+    "unique_training_worlds": 8283,
+    "exact_overlap": {
+      "held_out": [
+        1100020,
+        1100040,
+        1100046,
+        1100067,
+        1100167,
+        1100243
+      ],
+      "shifted": []
+    }
+  }
+]

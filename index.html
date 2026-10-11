@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#f5f3e9" />
+  <meta name="description" content="A tiny creature. A real neural network. Play, reshape its garden, and explore what learning from demonstrations actually changes." />
+  <title>CritterLab — a little world for learning</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='8' y='16' width='48' height='40' rx='18' fill='%237fa88e'/%3E%3Ccircle cx='24' cy='34' r='4'/%3E%3Ccircle cx='40' cy='34' r='4'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <header class="topbar"><a class="wordmark" href="#"><span class="logo">✳</span> critterlab<span class="version">FIELD NOTES / 001</span></a><nav><a href="#experiment">The experiment ↗</a><a href="https://github.com/shunhe-wang/critterlab" target="_blank" rel="noreferrer">GitHub ↗</a></nav></header>
+  <main>
+    <section class="intro"><div><div class="eyebrow"><span class="live-dot"></span> A LITTLE WORLD FOR LEARNING</div><h1>Small creature.<br>Real learning.</h1><p>Meet Pip. A tiny neural agent learning to find its way.<br>Play in its garden. Change the world. See what sticks.</p></div><div class="field-stamp"><span>OBSERVATION<br>NO. 001</span><span class="stamp-sprout">♧</span><small>Grown with curiosity.</small></div></section>
+    <section class="lab" aria-label="Interactive garden laboratory">
+      <div class="garden-panel">
+        <div class="panel-top"><div><span class="eyebrow">PIP'S LITTLE PATCH</span><div class="garden-title">The strawberry expedition</div></div><span id="garden-id" class="pill">GARDEN #42</span></div>
+        <div class="canvas-wrap"><canvas id="garden" width="700" height="700" tabindex="0" aria-label="Interactive 7 by 7 garden. Use arrow keys in play mode. In edit mode click or use the tile editor below."></canvas><div class="weather-label">☀ <span>A good day to try something.</span></div></div>
+        <div class="garden-bottom"><span><i class="legend berry"></i>Find the strawberry</span><span><i class="legend hazard"></i>Avoid the brambles</span><span><i class="legend rock"></i>Rocks block the way</span></div>
+      </div>
+      <aside class="control-panel">
+        <div class="specimen"><canvas id="portrait" width="140" height="140" aria-label="Pip, a mint green creature"></canvas><div><span class="eyebrow">YOUR RESIDENT CREATURE</span><h2>Pip <span class="tiny-tag">P-01</span></h2><p id="pip-mood">Small paws. Big ambitions.</p></div></div>
+        <fieldset class="mode-switch"><legend class="sr-only">Interaction mode</legend><button data-mode="watch" class="active">Watch Pip</button><button data-mode="play">Take control</button><button data-mode="edit">Edit garden</button></fieldset>
+        <label class="field-label" for="brain">Choose a brain <span>same creature, different training</span></label>
+        <select id="brain"><option value="bc-ppo">Demonstrations + rewards</option><option value="ppo">Rewards only</option><option value="bc">Demonstrations only</option><option value="untrained">Untrained</option></select>
+        <p class="brain-note" id="brain-note">Loading real trained weights…</p>
+        <div class="episode-stats"><div><span>STEPS</span><strong id="steps">00 <small>/ 48</small></strong></div><div><span>THIS ATTEMPT</span><strong id="outcome">Ready</strong></div></div>
+        <div class="main-actions"><button id="run" class="primary">▶ Let Pip explore</button><button id="reset" class="secondary" aria-label="Reset this garden">↺</button></div>
+        <div id="play-controls" class="hidden"><p class="hint">Arrow keys or WASD. Reach the berry to teach Pip your route.</p><div class="dpad"><button data-action="0" aria-label="Move north">↑</button><div><button data-action="3" aria-label="Move west">←</button><button data-action="2" aria-label="Move south">↓</button><button data-action="1" aria-label="Move east">→</button></div></div><button id="teach" class="secondary hidden" style="width:100%;margin-top:10px">Teach Pip this route ✳</button><p id="teach-note" class="hint"></p></div>
+        <div id="edit-controls" class="hidden"><p class="hint">Paint a new challenge. Pip keeps its trained brain.</p><div class="paint-tools"><button data-tile="1" class="active">Rock</button><button data-tile="2">Bramble</button><button data-tile="0">Grass</button><button data-tile="3">Berry</button></div><label class="sr-only" for="tile-index">Keyboard-accessible tile selector</label><select id="tile-index"></select><button id="paint-selected" class="secondary">Paint selected tile</button><p id="map-warning" class="hint"></p></div>
+        <div class="garden-settings"><label for="seed">Garden seed</label><div><input id="seed" type="number" min="0" max="4294967295" value="42" aria-label="Garden seed"/><button id="new-garden" class="secondary">New patch ↗</button></div><label class="check"><input id="shifted" type="checkbox"/> Wilder terrain</label></div>
+        <div class="lab-note"><span>↳</span><p>These are real learned policies running in your browser. No API calls. No scripted pathfinding.</p></div>
+      </aside>
+    </section>
+    <section class="inspector"><div><div class="eyebrow">A WINDOW INTO THE DECISION</div><h3>Which way is Pip leaning?</h3><p>The network's action probabilities at this moment.</p></div><div class="probabilities" id="probabilities"></div><div class="vision-note"><span>◉</span><p>Pip sees nearby tiles and the berry's direction.<br>The rest of the garden is outside its observation.</p></div></section>
+    <section class="replay"><div><span class="eyebrow">EPISODE JOURNAL</span><p id="journal-message" aria-live="polite">Every little step leaves a trace.</p></div><input id="timeline" type="range" min="0" max="0" value="0" aria-label="Scrub recorded episode"/><span id="frame-label">0 / 0</span><button id="download" class="text-button">Save replay ↓</button></section>
+    <section class="experiment" id="experiment"><div class="experiment-intro"><div><div class="eyebrow">THE SCIENCE UNDER THE SPRITES</div><h2>Does a little guidance<br>go a long way?</h2></div><p>We trained the same small network with and without demonstrations, then tested it on held-out garden seeds. Inspect the original results and the stricter world-overlap audit below.</p></div><div class="research-grid"><div class="chart-card"><div class="card-heading"><h3>Learning to find the berry</h3><span>Development gardens</span></div><svg id="learning-chart" viewBox="0 0 620 280" role="img" aria-label="Learning curves across three training seeds"></svg><div class="chart-key"><span><i style="background:#457858"></i>Demonstrations + rewards</span><span><i style="background:#c88552"></i>Rewards only</span></div></div><div class="results-card"><div class="card-heading"><h3>A fresh patch</h3><span>Goal success</span></div><label class="sr-only" for="evaluation-set">Evaluation set</label><select id="evaluation-set"><option value="held_out">Standard · held-out seeds</option><option value="shifted">Wilder · held-out seeds</option><option value="audit-held_out">Standard · disjoint-world audit</option><option value="audit-shifted">Wilder · disjoint-world audit</option></select><div id="results">Experiments loading…</div><p class="result-caption" id="result-caption">Mean ± standard deviation across 3 training seeds.</p></div></div><div class="research-footer"><p><strong>One honest comparison.</strong> Both reward-trained conditions get 65,536 environment steps. The demonstration condition also gets extra supervised data and training. Different seeds can produce identical worlds; the post-hoc audit removes all overlapping layouts from a common test subset. This is a small navigation experiment.</p><a href="https://github.com/shunhe-wang/critterlab/blob/main/docs/results.md" target="_blank" rel="noreferrer">Read the field notes ↗</a></div></section>
+    <section class="closing-note"><span>✳</span><p>Learning is a little messy.<br>That's the interesting part.</p><a href="https://github.com/shunhe-wang/critterlab" target="_blank" rel="noreferrer">Explore the code, weights & field notes ↗</a></section>
+  </main>
+  <footer><span>CRITTERLAB · AN OPEN LEARNING EXPERIMENT</span><span>Made by Shunhe Wang · Original procedural artwork</span></footer>
+  <script type="module" src="/web/main.ts"></script>
+</body>
+</html>

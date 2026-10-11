@@ -1,0 +1,23 @@
+name: Verify learning artifacts and demo
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run pytest -q
+      - run: uv run python -m critterlab.audit
+      - run: uv run python -m scripts.overlap_audit
+      - run: git diff --exit-code -- results/world-overlap.json results/disjoint-audit.json public/data/experiment.json
+      - run: npm ci
+      - run: npm run check
