@@ -24,8 +24,9 @@ An interrupted run saves complete method/seed blocks and is not marked
 `complete`; the audit rejects missing or duplicate runs. The runner does not
 resume a partial artifact: rerunning restarts the declared experiment.
 
-CI replays the committed results and re-runs inference; it does not retrain the
-full study. Local `uv run pytest -q` checks hand-calculated mathematical cases,
+The optional manual verification workflow replays the committed results and
+re-runs inference; it does not retrain the full study or run automatically on
+pushes or PRs. Local `uv run pytest -q` checks hand-calculated mathematical cases,
 map identity separation, exact update accounting, and checkpoint round-trips.
 Recorded outcomes are exact. Inference checks recorded states with a 1e-6
 probability tolerance for greedy ties or sampled CDF boundaries across CPUs;

@@ -4,15 +4,36 @@
 
 **A small creature. A real neural network. A little world for learning.**
 
-[Play](https://shunhe-wang.github.io/critterlab/) · [Imitation study](docs/research-results.md) · [Memory experiment](docs/memory-results.md) · [Navigation experiment](docs/results.md) · [Model cards](docs/model-card.md)
+[Research report](docs/research-results.md) · [Play](https://shunhe-wang.github.io/critterlab/) · [Memory experiment](docs/memory-results.md) · [Navigation experiment](docs/results.md) · [Model cards](docs/model-card.md)
 
-[![Verification](https://github.com/shunhe-wang/critterlab/actions/workflows/ci.yml/badge.svg)](https://github.com/shunhe-wang/critterlab/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.12-547460)
 ![PyTorch](https://img.shields.io/badge/PyTorch-real_training-c88552)
 ![TypeScript](https://img.shields.io/badge/TypeScript-browser_inference-547460)
 ![License](https://img.shields.io/badge/license-MIT-8b937d)
 
 </div>
+
+## Research report: when does imitation help or hurt reinforcement learning?
+
+**[Read the findings, uncertainty and limitations →](docs/research-results.md)**
+
+The study uses **350 training runs and ten paired seeds** to compare BC, PPO,
+BC→PPO, exploration controls, fixed/adaptive imitation and a DAgger-style
+baseline across standard, dense and barrier maps. Exact-world-disjoint pools
+are fixed before optimization, with matched interaction/update budgets and
+targeted ablations of demonstration volume, label noise, reward shaping and
+network width. Every final actor and evaluation action sequence is available.
+
+The results show where imitation's advantage shrinks under shift, how greedy
+evaluation can hide PPO's sampled performance, and why the adaptive alternative
+does not establish an improvement over BC→PPO. The adaptive rule uses
+established ideas; this study does not claim a novel learning algorithm.
+It was developed with AI assistance and is separate from the browser checkpoints.
+
+[Fixed protocol](docs/research-protocol.md) ·
+[Raw data and reproduction](research/README.md) ·
+[Failure analysis](docs/research-failures.md) ·
+[Primary-source background](docs/research-background.md)
 
 ![CritterLab's playable garden, neural policy inspector and episode journal](docs/demo.jpg)
 
@@ -65,23 +86,6 @@ Saves are local to a browser and site origin. There is no account or cloud sync;
 clearing site data removes the pet, so download a backup. Another tab's saved
 changes pause and refresh this tab. [Companion rules and save contract](docs/pet-contract.md)
 describe away-time limits, care rewards and the dialogue boundary.
-
-## Research investigation: imitation under distribution shift
-
-**When does source imitation help or hurt reinforcement-learning adaptation?**
-The follow-up study compares BC, PPO, BC→PPO, entropy controls, fixed/adaptive
-imitation, and a DAgger-style baseline across standard, dense and barrier maps.
-It fixes exact-world-disjoint pools before optimization and uses ten paired
-training seeds, matched interaction/update budgets, and paired uncertainty.
-Targeted ablations vary demonstration volume, label noise, reward shaping and
-network width. Every final actor and evaluation action sequence is available.
-
-[Read the findings and limitations](docs/research-results.md),
-[the protocol](docs/research-protocol.md), and
-[the primary-source background](docs/research-background.md).
-The adaptive rule is a tested heuristic using established ideas; a score alone
-does not establish algorithmic novelty. This study was developed with AI
-assistance and is separate from the original browser checkpoints.
 
 ## Memory experiment, actually run
 
@@ -201,8 +205,14 @@ Checks cover hand-worked world rules, actual weight updates, Python/TypeScript
 world parity, PyTorch/browser policy probabilities, and replaying **7,168**
 published navigation episodes and **432** memory episodes to recompute metrics
 and neural actions. Memory checks cover cue isolation, geometry separation
-and carried GRU state parity. CI also regenerates the
-world-overlap audit and checks that the committed results are unchanged.
+and carried GRU state parity. The optional
+[manual verification workflow](.github/workflows/ci.yml) also replays the
+research results, regenerates their analysis and the world-overlap audit, and
+checks that the committed results are unchanged.
+
+GitHub Actions does **not** run automatically on pushes, PR updates or merges.
+Verification and Pages deployment are manual-only: open the relevant workflow
+in the repository's **Actions** tab and choose **Run workflow** when needed.
 
 ## Architecture
 
